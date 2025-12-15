@@ -6,32 +6,24 @@
 import React, { useState, useEffect } from 'react'
 import {
   X, Cpu, Check, Eye, EyeOff, Terminal,
-  FileEdit, AlertTriangle, Settings2, Code, Keyboard
+  FileEdit, AlertTriangle, Settings2, Code, Keyboard, Plus, Trash, HardDrive
 } from 'lucide-react'
 import { useStore, LLMConfig } from '../store'
 import { t, Language } from '../i18n'
-import { BUILTIN_PROVIDERS, BuiltinProviderName } from '../types/provider'
+import { BUILTIN_PROVIDERS, BuiltinProviderName, ProviderModelConfig } from '../types/provider'
 
-type SettingsTab = 'provider' | 'editor' | 'agent' | 'keybindings'
+type SettingsTab = 'provider' | 'editor' | 'agent' | 'keybindings' | 'system'
 
 const LANGUAGES: { id: Language; name: string }[] = [
   { id: 'en', name: 'English' },
   { id: 'zh', name: '中文' },
 ]
 
-// Provider 列表（包含更多选项）
-const PROVIDERS = [
-  { id: 'openai', name: 'OpenAI', models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1-preview', 'o1-mini'] },
-  { id: 'anthropic', name: 'Anthropic', models: ['claude-3-5-sonnet-20241022', 'claude-3-5-haiku-20241022', 'claude-3-opus-20240229'] },
-  { id: 'gemini', name: 'Gemini', models: ['gemini-2.0-flash-exp', 'gemini-1.5-pro', 'gemini-1.5-flash'] },
-  { id: 'deepseek', name: 'DeepSeek', models: ['deepseek-chat', 'deepseek-coder'] },
-  { id: 'groq', name: 'Groq', models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'] },
-  { id: 'ollama', name: 'Ollama', models: ['llama3.2', 'codellama', 'deepseek-coder-v2'] },
-  { id: 'custom', name: 'Custom', models: [] },
-] as const
-
 export default function SettingsModal() {
-  const { llmConfig, setLLMConfig, setShowSettings, language, setLanguage, autoApprove, setAutoApprove } = useStore()
+  const { 
+    llmConfig, setLLMConfig, setShowSettings, language, setLanguage, 
+    autoApprove, setAutoApprove, providerConfigs, setProviderConfig 
+  } = useStore()
   const [activeTab, setActiveTab] = useState<SettingsTab>('provider')
   const [showApiKey, setShowApiKey] = useState(false)
   const [localConfig, setLocalConfig] = useState(llmConfig)
@@ -64,14 +56,21 @@ export default function SettingsModal() {
     setLocalConfig(llmConfig)
     setLocalLanguage(language)
     setLocalAutoApprove(autoApprove)
-    // 加载编辑器设置
+    // 加载设置
     window.electronAPI.getSetting('editorSettings').then(s => {
       if (s) setEditorSettings(s as typeof editorSettings)
     })
     window.electronAPI.getSetting('aiInstructions').then(s => {
       if (s) setAiInstructions(s as string)
     })
-  }, [llmConfig, language, autoApprove])
+    window.electronAPI.getSetting('providerConfigs').then(s => {
+        if (s) {
+            Object.entries(s as Record<string, ProviderModelConfig>).forEach(([id, config]) => {
+                setProviderConfig(id, config)
+            })
+        }
+    })
+  }, [llmConfig, language, autoApprove]) // 注意：这里不依赖 setProviderConfig 以避免循环，虽然它通常是稳定的
 
   const handleSave = async () => {
     setLLMConfig(localConfig)
@@ -82,17 +81,38 @@ export default function SettingsModal() {
     await window.electronAPI.setSetting('autoApprove', localAutoApprove)
     await window.electronAPI.setSetting('editorSettings', editorSettings)
     await window.electronAPI.setSetting('aiInstructions', aiInstructions)
+    // 保存 providerConfigs (它在 Store 中已经是新的了，因为我们直接修改了 store)
+    // 但实际上我们在 ProviderSettings 组件中修改了 store 吗？
+    // 是的，我们将把 addModel/removeModel 传递给子组件，它们会直接修改 Store。
+    // 所以这里我们需要把 Store 中的 providerConfigs 保存到后端。
+    await window.electronAPI.setSetting('providerConfigs', providerConfigs)
+    
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
   }
 
-  const selectedProvider = PROVIDERS.find(p => p.id === localConfig.provider)
+  // 计算当前的 PROVIDERS 列表
+  const currentProviders = [
+      ...Object.values(BUILTIN_PROVIDERS).map(p => ({
+          id: p.name,
+          name: p.displayName,
+          models: [...p.defaultModels, ...(providerConfigs[p.name]?.customModels || [])]
+      })),
+      { 
+          id: 'custom', 
+          name: 'Custom', 
+          models: providerConfigs['custom']?.customModels || [] 
+      }
+  ]
+
+  const selectedProvider = currentProviders.find(p => p.id === localConfig.provider)
 
   const tabs = [
     { id: 'provider' as const, label: localLanguage === 'zh' ? 'AI 模型' : 'AI Models', icon: Cpu },
     { id: 'editor' as const, label: localLanguage === 'zh' ? '编辑器' : 'Editor', icon: Code },
     { id: 'agent' as const, label: localLanguage === 'zh' ? 'Agent' : 'Agent', icon: Settings2 },
     { id: 'keybindings' as const, label: localLanguage === 'zh' ? '快捷键' : 'Keybindings', icon: Keyboard },
+    { id: 'system' as const, label: localLanguage === 'zh' ? '系统' : 'System', icon: HardDrive },
   ]
 
   return (
@@ -146,6 +166,7 @@ export default function SettingsModal() {
                 showApiKey={showApiKey}
                 setShowApiKey={setShowApiKey}
                 selectedProvider={selectedProvider}
+                providers={currentProviders}
                 language={localLanguage}
               />
             )}
@@ -170,6 +191,10 @@ export default function SettingsModal() {
 
             {activeTab === 'keybindings' && (
               <KeybindingsSettings language={localLanguage} />
+            )}
+
+            {activeTab === 'system' && (
+              <SystemSettings language={localLanguage} />
             )}
           </div>
         </div>
@@ -200,102 +225,149 @@ interface ProviderSettingsProps {
   setLocalConfig: React.Dispatch<React.SetStateAction<LLMConfig>>
   showApiKey: boolean
   setShowApiKey: (show: boolean) => void
-  selectedProvider: { id: string; name: string; models: readonly string[] } | undefined
+  selectedProvider: { id: string; name: string; models: string[] } | undefined
+  providers: { id: string; name: string; models: string[] }[]
   language: Language
 }
 
 function ProviderSettings({
-  localConfig, setLocalConfig, showApiKey, setShowApiKey, selectedProvider, language
+  localConfig, setLocalConfig, showApiKey, setShowApiKey, selectedProvider, providers, language
 }: ProviderSettingsProps) {
+  const { addCustomModel, removeCustomModel, providerConfigs } = useStore()
+  const [newModelName, setNewModelName] = useState('')
+
+  const handleAddModel = () => {
+      if (newModelName.trim()) {
+          addCustomModel(localConfig.provider, newModelName.trim())
+          setNewModelName('')
+      }
+  }
+
   return (
     <div className="space-y-6 text-text-primary">
+      {/* Provider Selector */}
       <div>
-        <h3 className="text-sm font-medium mb-3">{language === 'zh' ? '选择服务商' : 'Select Provider'}</h3>
+        <label className="text-sm font-medium mb-2 block">{language === 'zh' ? '服务提供商' : 'Provider'}</label>
         <div className="grid grid-cols-4 gap-2">
-          {PROVIDERS.map(provider => (
+          {providers.map(p => (
             <button
-              key={provider.id}
-              onClick={() => setLocalConfig({
-                ...localConfig,
-                provider: provider.id,
-                model: provider.models[0] || localConfig.model
-              })}
+              key={p.id}
+              onClick={() => setLocalConfig({ ...localConfig, provider: p.id as any, model: p.models[0] || '' })}
               className={`px-3 py-2.5 rounded-lg border text-sm transition-all ${
-                localConfig.provider === provider.id
+                localConfig.provider === p.id
                   ? 'border-accent bg-accent/10 text-accent shadow-sm'
                   : 'border-border-subtle hover:border-text-muted text-text-muted hover:text-text-primary bg-surface'
               }`}
             >
-              {provider.name}
+              {p.name}
             </button>
           ))}
         </div>
       </div>
 
-      {/* Model Selection */}
+      {/* Model Selector & Management */}
       <div>
-        <h3 className="text-sm font-medium mb-3">{language === 'zh' ? '选择模型' : 'Select Model'}</h3>
-        {selectedProvider && selectedProvider.models.length > 0 ? (
-          <select
+        <label className="text-sm font-medium mb-2 block">{language === 'zh' ? '模型' : 'Model'}</label>
+        <div className="space-y-3">
+            <select
             value={localConfig.model}
             onChange={(e) => setLocalConfig({ ...localConfig, model: e.target.value })}
             className="w-full bg-surface border border-border-subtle rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-accent"
-          >
-            {selectedProvider.models.map((model: string) => (
-              <option key={model} value={model}>{model}</option>
+            >
+            {selectedProvider?.models.map(m => (
+                <option key={m} value={m}>{m}</option>
             ))}
-          </select>
-        ) : (
-          <input
-            type="text"
-            value={localConfig.model}
-            onChange={(e) => setLocalConfig({ ...localConfig, model: e.target.value })}
-            placeholder={language === 'zh' ? '输入模型名称' : 'Enter model name'}
-            className="w-full bg-surface border border-border-subtle rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-accent"
-          />
-        )}
+            </select>
+            
+            {/* Add Model UI */}
+            <div className="flex gap-2">
+                <input
+                    type="text"
+                    value={newModelName}
+                    onChange={(e) => setNewModelName(e.target.value)}
+                    placeholder={language === 'zh' ? '输入新模型名称' : 'Enter new model name'}
+                    className="flex-1 bg-surface border border-border-subtle rounded-lg px-4 py-2 text-sm text-text-primary focus:outline-none focus:border-accent"
+                    onKeyDown={(e) => e.key === 'Enter' && handleAddModel()}
+                />
+                <button
+                    onClick={handleAddModel}
+                    disabled={!newModelName.trim()}
+                    className="px-3 py-2 bg-surface hover:bg-surface-hover border border-border-subtle rounded-lg disabled:opacity-50"
+                >
+                    <Plus className="w-4 h-4 text-accent" />
+                </button>
+            </div>
+
+            {/* Custom Model List */}
+            {providerConfigs[localConfig.provider]?.customModels?.length > 0 && (
+                <div className="space-y-2 mt-2">
+                    <p className="text-xs text-text-muted">{language === 'zh' ? '自定义模型列表:' : 'Custom Models:'}</p>
+                    <div className="max-h-32 overflow-y-auto custom-scrollbar space-y-1">
+                        {providerConfigs[localConfig.provider]?.customModels.map(model => (
+                            <div key={model} className="flex items-center justify-between px-3 py-2 bg-surface/50 rounded-lg border border-border-subtle/50 text-xs">
+                                <span className="font-mono text-text-secondary">{model}</span>
+                                <button
+                                    onClick={() => removeCustomModel(localConfig.provider, model)}
+                                    className="p-1 hover:text-red-400 text-text-muted transition-colors"
+                                >
+                                    <Trash className="w-3.5 h-3.5" />
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+        </div>
       </div>
 
       {/* API Key */}
       <div>
-        <h3 className="text-sm font-medium mb-3">API Key</h3>
+        <label className="text-sm font-medium mb-2 block">API Key</label>
         <div className="relative">
           <input
-            type={showApiKey ? 'text' : 'password'}
+            type={showApiKey ? "text" : "password"}
             value={localConfig.apiKey}
             onChange={(e) => setLocalConfig({ ...localConfig, apiKey: e.target.value })}
-            placeholder={`${selectedProvider?.name || 'Provider'} API Key`}
-            className="w-full bg-surface border border-border-subtle rounded-lg px-4 py-2.5 pr-12 text-sm text-text-primary focus:outline-none focus:border-accent"
+            placeholder={BUILTIN_PROVIDERS[localConfig.provider as BuiltinProviderName]?.apiKeyPlaceholder || 'Enter API Key'}
+            className="w-full bg-surface border border-border-subtle rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-accent pr-10"
           />
-          <button onClick={() => setShowApiKey(!showApiKey)} className="absolute right-3 top-1/2 -translate-y-1/2 p-1.5 rounded hover:bg-surface-hover text-text-muted hover:text-text-primary">
+          <button
+            onClick={() => setShowApiKey(!showApiKey)}
+            className="absolute right-3 top-2.5 text-text-muted hover:text-text-primary"
+          >
             {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
           </button>
         </div>
-        {localConfig.provider !== 'ollama' && (
-          <p className="text-xs text-text-muted mt-2">
-            {language === 'zh' ? '获取 API Key: ' : 'Get API Key: '}
-            <a href={BUILTIN_PROVIDERS[localConfig.provider as BuiltinProviderName]?.apiKeyUrl || '#'}
-               target="_blank" className="text-accent hover:underline">
-              {BUILTIN_PROVIDERS[localConfig.provider as BuiltinProviderName]?.apiKeyUrl || 'Provider website'}
-            </a>
-          </p>
-        )}
+        <p className="text-xs text-text-muted mt-2">
+          {localConfig.provider !== 'custom' && localConfig.provider !== 'ollama' && (
+             <a
+               href={BUILTIN_PROVIDERS[localConfig.provider as BuiltinProviderName]?.apiKeyUrl}
+               target="_blank"
+               rel="noreferrer"
+               className="hover:text-accent underline decoration-dotted"
+             >
+               {language === 'zh' ? '获取 API Key' : 'Get API Key'}
+             </a>
+          )}
+        </p>
       </div>
 
       {/* Custom Endpoint */}
-      <div>
-        <h3 className="text-sm font-medium mb-3">{language === 'zh' ? '自定义端点 (可选)' : 'Custom Endpoint (Optional)'}</h3>
-        <input
-          type="text"
-          value={localConfig.baseUrl || ''}
-          onChange={(e) => setLocalConfig({ ...localConfig, baseUrl: e.target.value || undefined })}
-          placeholder={localConfig.provider === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
-          className="w-full bg-surface border border-border-subtle rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-accent"
-        />
-        <p className="text-xs text-text-muted mt-2">
-          {language === 'zh' ? '用于 OpenAI 兼容的 API 或本地模型' : 'For OpenAI-compatible APIs or local models'}
-        </p>
-      </div>
+      {(localConfig.provider === 'custom' || BUILTIN_PROVIDERS[localConfig.provider as BuiltinProviderName]?.supportsCustomEndpoint) && (
+        <div>
+          <h3 className="text-sm font-medium mb-3">{language === 'zh' ? '自定义端点 (可选)' : 'Custom Endpoint (Optional)'}</h3>
+          <input
+            type="text"
+            value={localConfig.baseUrl || ''}
+            onChange={(e) => setLocalConfig({ ...localConfig, baseUrl: e.target.value || undefined })}
+            placeholder={localConfig.provider === 'ollama' ? 'http://localhost:11434' : 'https://api.example.com/v1'}
+            className="w-full bg-surface border border-border-subtle rounded-lg px-4 py-2.5 text-sm text-text-primary focus:outline-none focus:border-accent"
+          />
+          <p className="text-xs text-text-muted mt-2">
+            {language === 'zh' ? '用于 OpenAI 兼容的 API 或本地模型' : 'For OpenAI-compatible APIs or local models'}
+          </p>
+        </div>
+      )}
     </div>
   )
 }
@@ -566,6 +638,69 @@ function KeybindingsSettings({ language }: { language: Language }) {
             <kbd className="px-2 py-1 text-xs font-mono bg-surface border border-border-subtle rounded">{s.keys}</kbd>
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+// 系统设置组件
+function SystemSettings({ language }: { language: Language }) {
+  const [dataPath, setDataPath] = useState<string>('')
+  const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    window.electronAPI.getDataPath().then(setDataPath)
+  }, [])
+
+  const handleChangePath = async () => {
+    // 复用 openFolder API 来选择目录
+    const newPath = await window.electronAPI.openFolder()
+    if (newPath && newPath !== dataPath) {
+        if (confirm(language === 'zh' 
+            ? '更改配置目录将把当前配置移动到新位置，并可能需要重启应用。确定继续吗？' 
+            : 'Changing the data directory will move your current configuration to the new location and may require a restart. Continue?')) {
+            setLoading(true)
+            const success = await window.electronAPI.setDataPath(newPath)
+            setLoading(false)
+            if (success) {
+                setDataPath(newPath)
+                alert(language === 'zh' ? '配置目录已更改' : 'Data directory changed successfully')
+            } else {
+                alert(language === 'zh' ? '更改失败' : 'Failed to change data directory')
+            }
+        }
+    }
+  }
+
+  return (
+    <div className="space-y-6 text-text-primary">
+      <div>
+        <h3 className="text-sm font-medium mb-3">{language === 'zh' ? '数据存储' : 'Data Storage'}</h3>
+        <p className="text-xs text-text-muted mb-3">
+          {language === 'zh' 
+            ? '选择保存应用程序配置和数据的目录。' 
+            : 'Choose the directory where application configuration and data are saved.'}
+        </p>
+        
+        <div className="flex gap-3">
+            <div className="flex-1 bg-surface border border-border-subtle rounded-lg px-4 py-2.5 text-sm text-text-secondary font-mono truncate">
+                {dataPath || (language === 'zh' ? '加载中...' : 'Loading...')}
+            </div>
+            <button 
+                onClick={handleChangePath}
+                disabled={loading}
+                className="px-4 py-2 bg-surface hover:bg-surface-hover border border-border-subtle rounded-lg text-sm text-text-primary transition-colors disabled:opacity-50"
+            >
+                {loading 
+                    ? (language === 'zh' ? '移动中...' : 'Moving...') 
+                    : (language === 'zh' ? '更改目录' : 'Change Directory')}
+            </button>
+        </div>
+        <p className="text-xs text-text-muted mt-2">
+            {language === 'zh' 
+                ? '当前配置将自动迁移到新目录。' 
+                : 'Current configuration will be automatically migrated to the new directory.'}
+        </p>
       </div>
     </div>
   )

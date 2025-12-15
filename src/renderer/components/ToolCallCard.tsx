@@ -13,6 +13,32 @@ import {
 import { ToolCall } from '../store'
 import ToolResultViewer from './ToolResultViewer'
 
+// 解析 Search/Replace 块 (简易版)
+function parseBlocks(text: string) {
+    const blocks: { search: string; replace: string }[] = []
+    const regex = /<<<SEARCH\n([\s\S]*?)\n===(?:[ \t]*\n)?([\s\S]*?)\n>>>/g
+    let match
+    while ((match = regex.exec(text)) !== null) {
+        blocks.push({ search: match[1], replace: match[2] })
+    }
+    return blocks
+}
+
+function EditBlockDiff({ search, replace }: { search: string; replace: string }) {
+  return (
+    <div className="flex flex-col text-xs font-mono border border-border-subtle rounded bg-black/20 overflow-hidden">
+      <div className="flex bg-red-900/20 border-b border-red-900/30">
+         <div className="w-8 p-2 text-center text-red-500/50 select-none border-r border-red-900/30">-</div>
+         <pre className="p-2 text-red-300/90 whitespace-pre-wrap overflow-x-auto flex-1">{search}</pre>
+      </div>
+      <div className="flex bg-green-900/20">
+         <div className="w-8 p-2 text-center text-green-500/50 select-none border-r border-green-900/30">+</div>
+         <pre className="p-2 text-green-300/90 whitespace-pre-wrap overflow-x-auto flex-1">{replace}</pre>
+      </div>
+    </div>
+  )
+}
+
 // 工具显示配置
 const TOOL_CONFIG: Record<string, {
   icon: typeof FileText
@@ -224,6 +250,11 @@ export default memo(function ToolCallCard({
   const filePath = extractFilePath(toolCall.arguments)
   const command = extractCommand(toolCall.arguments)
   const fileName = filePath ? getFileName(filePath) : null
+  
+  // 对于 edit_file，提取修改块
+  const editBlocks = toolCall.name === 'edit_file' && typeof toolCall.arguments.search_replace_blocks === 'string'
+      ? parseBlocks(toolCall.arguments.search_replace_blocks)
+      : []
 
   // 处理文件点击 - 打开文件并显示 diff
   const handleFileClick = useCallback((e: React.MouseEvent) => {
@@ -364,7 +395,21 @@ export default memo(function ToolCallCard({
       {/* 展开内容 - 参数详情 */}
       {expanded && (
         <div className="px-3 py-2.5 border-t border-border-subtle/30 bg-black/20 animate-slide-in">
-          <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5">参数</div>
+          {editBlocks.length > 0 && (
+              <div className="mb-4">
+                  <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5 flex items-center gap-2">
+                      <FileEdit className="w-3 h-3" />
+                      Proposed Changes ({editBlocks.length})
+                  </div>
+                  <div className="space-y-2">
+                      {editBlocks.map((block, i) => (
+                          <EditBlockDiff key={i} search={block.search} replace={block.replace} />
+                      ))}
+                  </div>
+              </div>
+          )}
+          
+          <div className="text-[10px] text-text-muted uppercase tracking-wider mb-1.5">参数 JSON</div>
           <pre className="text-xs text-text-secondary font-mono whitespace-pre-wrap max-h-32 overflow-auto custom-scrollbar">
             {JSON.stringify(toolCall.arguments, null, 2)}
           </pre>

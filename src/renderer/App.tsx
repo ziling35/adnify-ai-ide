@@ -11,6 +11,7 @@ import KeyboardShortcuts from './components/KeyboardShortcuts'
 import QuickOpen from './components/QuickOpen'
 import ActivityBar from './components/ActivityBar'
 import StatusBar from './components/StatusBar'
+import ComposerPanel from './components/ComposerPanel'
 
 export default function App() {
   const { 
@@ -20,6 +21,7 @@ export default function App() {
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false)
   const [showQuickOpen, setShowQuickOpen] = useState(false)
+  const [showComposer, setShowComposer] = useState(false)
 
   useEffect(() => {
     // Load saved settings & restore workspace
@@ -78,13 +80,19 @@ export default function App() {
         setShowKeyboardShortcuts(true)
       }
     }
+    // Ctrl+Shift+I: Composer (多文件编辑)
+    else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key === 'I') {
+      e.preventDefault()
+      setShowComposer(true)
+    }
     // Escape: 关闭面板
     else if (e.key === 'Escape') {
       if (showCommandPalette) setShowCommandPalette(false)
       if (showKeyboardShortcuts) setShowKeyboardShortcuts(false)
       if (showQuickOpen) setShowQuickOpen(false)
+      if (showComposer) setShowComposer(false)
     }
-  }, [setShowSettings, setTerminalVisible, terminalVisible, showCommandPalette, showKeyboardShortcuts, showQuickOpen])
+  }, [setShowSettings, setTerminalVisible, terminalVisible, showCommandPalette, showKeyboardShortcuts, showQuickOpen, showComposer])
 
   useEffect(() => {
     window.addEventListener('keydown', handleGlobalKeyDown)
@@ -133,6 +141,9 @@ export default function App() {
       )}
       {showQuickOpen && (
         <QuickOpen onClose={() => setShowQuickOpen(false)} />
+      )}
+      {showComposer && (
+        <ComposerPanel onClose={() => setShowComposer(false)} />
       )}
     </div>
   )

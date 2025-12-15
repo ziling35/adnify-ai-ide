@@ -94,8 +94,13 @@ export interface ElectronAPI {
 	// File operations
 	openFile: () => Promise<{ path: string; content: string } | null>
 	openFolder: () => Promise<string | null>
+	showOpenDialog: (options: { properties?: string[]; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string[] | null>
+	
+	// Git operations (原生 dugite)
+	gitExec: (args: string[], cwd: string) => Promise<{ stdout: string; stderr: string; exitCode: number }>
     restoreWorkspace: () => Promise<string | null>
 	readDir: (path: string) => Promise<FileItem[]>
+    getFileTree: (path: string, maxDepth?: number) => Promise<string>
 	readFile: (path: string) => Promise<string | null>
 	writeFile: (path: string, content: string) => Promise<boolean>
 	saveFile: (content: string, path?: string) => Promise<string | null>
@@ -108,6 +113,8 @@ export interface ElectronAPI {
 	// Settings
 	getSetting: (key: string) => Promise<unknown>
 	setSetting: (key: string, value: unknown) => Promise<boolean>
+    getDataPath: () => Promise<string>
+    setDataPath: (path: string) => Promise<boolean>
 
 	// LLM
 	sendMessage: (params: LLMSendMessageParams) => Promise<void>
@@ -118,12 +125,13 @@ export interface ElectronAPI {
 	onLLMDone: (callback: (result: LLMResult) => void) => () => void
 
 	// Terminal
-    createTerminal: (options?: { cwd?: string }) => Promise<boolean>
-    writeTerminal: (data: string) => Promise<void>
-    resizeTerminal: (cols: number, rows: number) => Promise<void>
-	killTerminal: () => void
+    createTerminal: (options: { id: string; cwd?: string; shell?: string }) => Promise<boolean>
+    writeTerminal: (id: string, data: string) => Promise<void>
+    resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>
+	killTerminal: (id?: string) => void
+	getAvailableShells: () => Promise<{ label: string; path: string }[]>
     executeCommand: (command: string, cwd?: string) => Promise<{ output: string; errorOutput: string; exitCode: number }>
-	onTerminalData: (callback: (data: string) => void) => () => void
+	onTerminalData: (callback: (event: { id: string; data: string }) => void) => () => void
 }
 
 declare global {

@@ -21,54 +21,59 @@ loader.config({
 
 // 语言映射
 const LANGUAGE_MAP: Record<string, string> = {
-  ts: 'typescript',
-  tsx: 'typescript',
-  js: 'javascript',
-  jsx: 'javascript',
-  mjs: 'javascript',
-  cjs: 'javascript',
-  py: 'python',
-  json: 'json',
-  jsonc: 'json',
-  md: 'markdown',
-  mdx: 'markdown',
-  css: 'css',
-  scss: 'scss',
-  less: 'less',
-  html: 'html',
-  htm: 'html',
-  vue: 'html',
-  svelte: 'html',
-  xml: 'xml',
-  svg: 'xml',
-  yml: 'yaml',
-  yaml: 'yaml',
-  sh: 'shell',
-  bash: 'shell',
-  zsh: 'shell',
-  fish: 'shell',
-  ps1: 'powershell',
-  sql: 'sql',
-  graphql: 'graphql',
-  gql: 'graphql',
-  rs: 'rust',
+  // JavaScript / TypeScript
+  ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
+  // Web
+  html: 'html', htm: 'html', vue: 'html', svelte: 'html', css: 'css', scss: 'scss', less: 'scss',
+  // Python
+  py: 'python', pyw: 'python', pyi: 'python',
+  // Java
+  java: 'java', jar: 'java', class: 'java',
+  // C / C++
+  c: 'c', h: 'c', cpp: 'cpp', hpp: 'cpp', cc: 'cpp', cxx: 'cpp',
+  // C#
+  cs: 'csharp', csx: 'csharp',
+  // Go
   go: 'go',
-  java: 'java',
-  kt: 'kotlin',
-  swift: 'swift',
-  c: 'c',
-  cpp: 'cpp',
-  h: 'c',
-  hpp: 'cpp',
-  cs: 'csharp',
-  rb: 'ruby',
+  // Rust
+  rs: 'rust',
+  // Ruby
+  rb: 'ruby', erb: 'ruby',
+  // PHP
   php: 'php',
+  // Shell
+  sh: 'shell', bash: 'shell', zsh: 'shell', fish: 'shell',
+  // PowerShell
+  ps1: 'powershell', psm1: 'powershell',
+  // Data / Config
+  json: 'json', jsonc: 'json',
+  xml: 'xml', svg: 'xml', xaml: 'xml',
+  yml: 'yaml', yaml: 'yaml',
+  toml: 'ini', ini: 'ini', env: 'ini', conf: 'ini', properties: 'ini',
+  md: 'markdown', mdx: 'markdown',
+  sql: 'sql',
+  // Mobile
+  swift: 'swift',
+  kt: 'kotlin', kts: 'kotlin',
+  dart: 'dart',
+  // Others
   lua: 'lua',
   r: 'r',
+  pl: 'perl', pm: 'perl',
+  clj: 'clojure', cljs: 'clojure', edn: 'clojure',
+  scala: 'scala', sc: 'scala',
+  groovy: 'groovy', gradle: 'groovy',
+  m: 'objective-c', mm: 'objective-c',
+  hs: 'haskell',
+  ex: 'elixir', exs: 'elixir',
+  erl: 'erlang', hr: 'erlang',
+  fs: 'fsharp', fsi: 'fsharp', fsx: 'fsharp',
+  v: 'verilog', vh: 'verilog',
+  coffee: 'coffeescript',
   dockerfile: 'dockerfile',
-  toml: 'ini',
-  ini: 'ini',
-  env: 'ini',
+  makefile: 'makefile',
+  bat: 'bat', cmd: 'bat',
+  diff: 'diff', patch: 'diff',
 }
 
 const getLanguage = (path: string): string => {

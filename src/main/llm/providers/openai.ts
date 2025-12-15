@@ -5,7 +5,7 @@
 
 import OpenAI from 'openai'
 import { BaseProvider } from './base'
-import { ChatParams, ToolDefinition, ToolCall, LLMError, LLMErrorCode } from '../types'
+import { ChatParams, ToolDefinition, ToolCall, MessageContent } from '../types'
 
 export class OpenAIProvider extends BaseProvider {
 	private client: OpenAI
@@ -20,6 +20,21 @@ export class OpenAIProvider extends BaseProvider {
 			maxRetries: 0, // 我们自己处理重试
 		})
 	}
+
+    private convertContent(content: MessageContent): string | Array<OpenAI.Chat.Completions.ChatCompletionContentPart> {
+        if (typeof content === 'string') return content
+        return content.map(part => {
+            if (part.type === 'text') {
+                return { type: 'text', text: part.text }
+            } else {
+                // OpenAI expects base64 as data:image/...;base64,...
+                const url = part.source.type === 'base64' 
+                    ? `data:${part.source.media_type};base64,${part.source.data}`
+                    : part.source.data
+                return { type: 'image_url', image_url: { url } }
+            }
+        })
+    }
 
 	private convertTools(tools?: ToolDefinition[]): OpenAI.ChatCompletionTool[] | undefined {
 		if (!tools?.length) return undefined
@@ -50,7 +65,7 @@ export class OpenAIProvider extends BaseProvider {
 				if (msg.role === 'tool') {
 					openaiMessages.push({
 						role: 'tool',
-						content: msg.content,
+						content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
 						tool_call_id: msg.toolCallId!,
 					})
 				} else if (msg.role === 'assistant' && msg.toolName) {
@@ -62,14 +77,19 @@ export class OpenAIProvider extends BaseProvider {
 							type: 'function',
 							function: {
 								name: msg.toolName,
-								arguments: msg.content,
+								arguments: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
 							}
 						}]
 					})
-				} else if (msg.role !== 'system') {
+				} else if (msg.role === 'user') {
 					openaiMessages.push({
-						role: msg.role as 'user' | 'assistant',
-						content: msg.content,
+						role: 'user',
+						content: this.convertContent(msg.content),
+					})
+				} else if (msg.role === 'assistant') {
+					openaiMessages.push({
+						role: 'assistant',
+						content: typeof msg.content === 'string' ? msg.content : msg.content.map(p => p.type === 'text' ? p.text : '').join(''),
 					})
 				}
 			}

@@ -59,9 +59,15 @@ export class GeminiProvider extends BaseProvider {
 			const history: Content[] = []
 			let lastUserMessage = ''
 
+			// Helper to convert MessageContent to string
+			const contentToString = (content: typeof messages[0]['content']): string => {
+				if (typeof content === 'string') return content
+				return content.map(part => part.type === 'text' ? part.text : '[image]').join('')
+			}
+
 			for (const msg of messages) {
 				if (msg.role === 'user') {
-					lastUserMessage = msg.content
+					lastUserMessage = contentToString(msg.content)
 				} else if (msg.role === 'assistant') {
 					if (msg.toolName) {
 						history.push({
@@ -69,14 +75,14 @@ export class GeminiProvider extends BaseProvider {
 							parts: [{
 								functionCall: {
 									name: msg.toolName,
-									args: JSON.parse(msg.content),
+									args: JSON.parse(contentToString(msg.content)),
 								}
 							}]
 						})
 					} else {
 						history.push({
 							role: 'model',
-							parts: [{ text: msg.content }]
+							parts: [{ text: contentToString(msg.content) }]
 						})
 					}
 				} else if (msg.role === 'tool') {
@@ -85,7 +91,7 @@ export class GeminiProvider extends BaseProvider {
 						parts: [{
 							functionResponse: {
 								name: msg.toolName || '',
-								response: { result: msg.content }
+								response: { result: contentToString(msg.content) }
 							}
 						}]
 					})

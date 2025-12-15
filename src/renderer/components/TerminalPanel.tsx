@@ -1,15 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
-import { Terminal as XTerminal } from 'xterm'
-import { FitAddon } from 'xterm-addon-fit'
-import { WebLinksAddon } from 'xterm-addon-web-links'
-// import 'xterm/css/xterm.css' // Temporarily disabled for debugging
-import { X, Plus, Trash2, ChevronUp, ChevronDown, Terminal as TerminalIcon } from 'lucide-react'
+import { Terminal as XTerminal } from '@xterm/xterm'
+import { FitAddon } from '@xterm/addon-fit'
+import { WebLinksAddon } from '@xterm/addon-web-links'
+import { X, Plus, Trash2, ChevronUp, ChevronDown, Terminal as TerminalIcon, Sparkles } from 'lucide-react'
 import { useStore } from '../store'
-import { t } from '../i18n'
+// import { t } from '../i18n'
 
-// Manually inject minimal Xterm styles to ensure it renders even if CSS import fails
 const XTERM_STYLE = `
-.xterm { cursor: text; position: relative; user-select: none; }
+.xterm { font-feature-settings: "liga" 0; position: relative; user-select: none; -ms-user-select: none; -webkit-user-select: none; padding: 4px; }
+.xterm.focus, .xterm:focus { outline: none; }
 .xterm .xterm-helpers { position: absolute; z-index: 5; }
 .xterm .xterm-helper-textarea { padding: 0; border: 0; margin: 0; position: absolute; opacity: 0; left: -9999em; top: 0; width: 0; height: 0; z-index: -5; overflow: hidden; white-space: nowrap; }
 .xterm .composition-view { background: #000; color: #FFF; display: none; position: absolute; white-space: pre; z-index: 1; }
@@ -26,177 +25,207 @@ const XTERM_STYLE = `
 .xterm-live-region { position: absolute; left: -9999px; width: 1px; height: 1px; overflow: hidden; }
 .xterm-dim { opacity: 0.5; }
 .xterm-underline { text-decoration: underline; }
+.xterm-selection-layer { position: absolute; top: 0; left: 0; z-index: 1; pointer-events: none; }
+.xterm-cursor-layer { position: absolute; top: 0; left: 0; z-index: 2; pointer-events: none; }
+.xterm-link-layer { position: absolute; top: 0; left: 0; z-index: 11; pointer-events: none; }
+.xterm-link-layer a { cursor: pointer; color: #3b82f6; text-decoration: underline; }
 `
 
+interface TerminalSession {
+    id: string
+    name: string
+    shell: string
+}
+
 export default function TerminalPanel() {
-  const { terminalVisible, setTerminalVisible, language, workspacePath } = useStore()
-  const containerRef = useRef<HTMLDivElement>(null)
-  const terminalRef = useRef<XTerminal | null>(null)
-  const fitAddonRef = useRef<FitAddon | null>(null)
-  const [isReady, setIsReady] = useState(false)
+  const { terminalVisible, setTerminalVisible, workspacePath, setChatMode, setInputPrompt } = useStore()
   const [isCollapsed, setIsCollapsed] = useState(false)
+  
+  // Multi-terminal state
+  const [terminals, setTerminals] = useState<TerminalSession[]>([])
+  const [activeId, setActiveId] = useState<string | null>(null)
+  const [availableShells, setAvailableShells] = useState<{label: string, path: string}[]>([])
+  const [showShellMenu, setShowShellMenu] = useState(false)
 
-  // Initialize Terminal - only when visible and container is ready
+  // Refs for managing instances
+  const terminalRefs = useRef<Map<string, XTerminal>>(new Map())
+  const addonRefs = useRef<Map<string, FitAddon>>(new Map())
+  const containerRefs = useRef<Map<string, HTMLDivElement>>(new Map())
+  const outputBuffers = useRef<Map<string, string[]>>(new Map())
+
+  // Load available shells from main process
   useEffect(() => {
-    console.log('[Terminal] Effect triggered. Visible:', terminalVisible, 'Container:', !!containerRef.current)
-    
-    // Don't initialize if not visible
-    if (!terminalVisible) {
-        return
-    }
-    
-    if (!containerRef.current) {
-        console.warn('[Terminal] Container ref is null, deferring init')
-        return
-    }
-    
-    if (terminalRef.current) {
-        console.log('[Terminal] Already initialized')
-        return
-    }
+      const loadShells = async () => {
+          try {
+              const shells = await window.electronAPI.getAvailableShells()
+              setAvailableShells(shells)
+          } catch {
+              // Fallback
+              setAvailableShells([{ label: 'Terminal', path: '' }])
+          }
+      }
+      loadShells()
+  }, [])
 
-    try {
-        console.log('[Terminal] Initializing Xterm...')
-        const term = new XTerminal({
-          cursorBlink: true,
-          fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
-          fontSize: 13,
-          lineHeight: 1.2,
-          letterSpacing: 0,
-          theme: {
-            background: '#18181b',
-            foreground: '#e4e4e7',
-            cursor: '#3b82f6',
-            selectionBackground: 'rgba(59, 130, 246, 0.3)',
-            black: '#18181b',
-            red: '#ef4444',
-            green: '#22c55e',
-            yellow: '#eab308',
-            blue: '#3b82f6',
-            magenta: '#a855f7',
-            cyan: '#06b6d4',
-            white: '#ffffff',
-            brightBlack: '#71717a',
-            brightRed: '#f87171',
-            brightGreen: '#4ade80',
-            brightYellow: '#facc15',
-            brightBlue: '#60a5fa',
-            brightMagenta: '#c084fc',
-            brightCyan: '#22d3ee',
-            brightWhite: '#ffffff',
-          },
-          allowProposedApi: true
-        })
-
-        const fitAddon = new FitAddon()
-        const webLinksAddon = new WebLinksAddon()
-        
-        term.loadAddon(fitAddon)
-        term.loadAddon(webLinksAddon)
-        
-        term.open(containerRef.current)
-        console.log('[Terminal] Xterm opened')
-        
-        // Immediate fit try
-        try { fitAddon.fit() } catch (e) { console.warn('Initial fit failed', e) }
-
-        terminalRef.current = term
-        fitAddonRef.current = fitAddon
-
-        // Create backend terminal process
-        console.log('[Terminal] Requesting backend process...')
-        window.electronAPI.createTerminal({ cwd: workspacePath || undefined }).then((success) => {
-            console.log('[Terminal] Backend process started:', success)
-            if (success) {
-                setIsReady(true)
-                term.focus()
-                window.electronAPI.writeTerminal('\r') // Wake up prompt
-            } else {
-                term.write('\r\nFailed to start shell.\r\n')
-            }
-        })
-
-        // Input handling
-        term.onData((data) => {
-            window.electronAPI.writeTerminal(data)
-        })
-
-        // Output handling
-        const unsubscribe = window.electronAPI.onTerminalData((data) => {
-            term.write(data)
-        })
-
-        // Resize observer
-        const resizeObserver = new ResizeObserver(() => {
-            if (!isCollapsed && terminalVisible) {
-                try { fitAddon.fit() } catch {}
-            }
-        })
-        resizeObserver.observe(containerRef.current)
-
-        // Window resize handler
-        const handleResize = () => { try { fitAddon.fit() } catch {} }
-        window.addEventListener('resize', handleResize)
-
-        // Store cleanup function
-        return () => {
-            console.log('[Terminal] Cleaning up')
-            unsubscribe()
-            resizeObserver.disconnect()
-            window.removeEventListener('resize', handleResize)
-            
-            // Allow time for cleanup before killing to avoid errors? No, sync is better.
-            try {
-                term.dispose()
-            } catch (e) {
-                console.error('Error disposing terminal', e)
-            }
-            
-            window.electronAPI.killTerminal()
-            terminalRef.current = null
-        }
-    } catch (error) {
-        console.error('[Terminal] Initialization Error:', error)
-    }
-  }, [workspacePath, terminalVisible]) // Re-init if workspace changes or becomes visible
-
-  // Re-fit when visibility changes
+  // Create initial terminal if none exist and visible
   useEffect(() => {
-      if (terminalVisible && !isCollapsed && fitAddonRef.current) {
-          setTimeout(() => {
+      if (terminalVisible && terminals.length === 0) {
+          createTerminal()
+      }
+  }, [terminalVisible])
+
+  // Resize observer for active terminal
+  useEffect(() => {
+      if (!terminalVisible || isCollapsed || !activeId) return
+
+      const handleResize = () => {
+          const addon = addonRefs.current.get(activeId)
+          if (addon) {
               try {
-                  fitAddonRef.current?.fit()
-                  terminalRef.current?.focus()
-              } catch {}
-          }, 100)
+                  addon.fit()
+                  // Sync size to backend
+                  if (addon.proposeDimensions()) {
+                      const { cols, rows } = addon.proposeDimensions()!
+                      window.electronAPI.resizeTerminal(activeId, cols, rows)
+                  }
+              } catch (e) { console.error(e) }
+          }
       }
-  }, [terminalVisible, isCollapsed])
 
-  const handleCreate = async () => {
-      console.log('[Terminal] handleCreate clicked', { ref: !!terminalRef.current })
+      window.addEventListener('resize', handleResize)
+      // Initial fit
+      setTimeout(handleResize, 100)
+
+      return () => window.removeEventListener('resize', handleResize)
+  }, [terminalVisible, isCollapsed, activeId])
+
+  // Data listener (Global)
+  useEffect(() => {
+      const unsubscribe = window.electronAPI.onTerminalData(({ id, data }: { id?: string, data: string }) => {
+          // Backward compatibility: if id is string inside data (unlikely) or passed separately
+          // The preload sends (data) or ({id, data}). We need to update preload to send object.
+          // Assuming we updated main.ts, we need to update preload.ts to pass object.
+          // Wait, main.ts sends { id, data }. Preload receives it.
+          // Let's assume preload passes it through or we fix preload.
+          
+          // If data is just string (old behavior), we might assume active terminal?
+          // Let's be safe.
+          const targetId = id || activeId
+          if (!targetId) return
+
+          const term = terminalRefs.current.get(targetId)
+          if (term) {
+              term.write(data)
+              
+              // Buffer for AI Fix
+              if (!outputBuffers.current.has(targetId)) {
+                  outputBuffers.current.set(targetId, [])
+              }
+              const buffer = outputBuffers.current.get(targetId)!
+              buffer.push(data)
+              if (buffer.length > 500) buffer.shift()
+          }
+      })
+      return unsubscribe
+  }, [activeId])
+
+  const createTerminal = async (shellPath?: string, shellName?: string) => {
+      const id = crypto.randomUUID()
+      // 使用传入的名称，或者使用第一个可用 shell 的名称，或默认 Terminal
+      const name = shellName || availableShells[0]?.label || 'Terminal'
       
-      // If ref is missing, try to force a re-mount by toggling specific state or just log
-      if (!terminalRef.current) {
-          console.error('[Terminal] Ref is missing, cannot reset. Is the panel visible?')
-          return
-      }
-      
-      terminalRef.current.write('\r\n\x1b[33mStarting new terminal session...\x1b[0m\r\n')
-      
-      try {
-          await window.electronAPI.createTerminal({ cwd: workspacePath || undefined })
-          terminalRef.current.clear()
-          fitAddonRef.current?.fit() 
-          terminalRef.current.focus()
-          window.electronAPI.writeTerminal('\r')
-      } catch (e) {
-          terminalRef.current.write(`\r\n\x1b[31mError creating terminal: ${e}\x1b[0m\r\n`)
-      }
+      setTerminals(prev => [...prev, { id, name, shell: shellPath || '' }])
+      setActiveId(id)
+      setShowShellMenu(false)
+
+      // Defer creation until DOM is ready
+      setTimeout(async () => {
+          const container = containerRefs.current.get(id)
+          if (!container) return
+
+          const term = new XTerminal({
+            cursorBlink: true,
+            fontFamily: "'JetBrains Mono', 'Fira Code', monospace",
+            fontSize: 13,
+            lineHeight: 1.2,
+            theme: {
+                background: '#18181b',
+                foreground: '#e4e4e7',
+                cursor: '#a1a1aa',
+                selectionBackground: 'rgba(255, 255, 255, 0.15)',
+                black: '#18181b',
+                blue: '#3b82f6',
+                // ... (simplified theme)
+            },
+            allowProposedApi: true
+          })
+
+          const fitAddon = new FitAddon()
+          const webLinksAddon = new WebLinksAddon()
+          term.loadAddon(fitAddon)
+          term.loadAddon(webLinksAddon)
+          
+          term.open(container)
+          term.onData((data: string) => {
+              window.electronAPI.writeTerminal(id, data)
+          })
+
+          terminalRefs.current.set(id, term)
+          addonRefs.current.set(id, fitAddon)
+          
+          try {
+              fitAddon.fit()
+          } catch {}
+
+          // Call backend
+          await window.electronAPI.createTerminal({ id, cwd: workspacePath || undefined, shell: shellPath })
+          
+          // Initial size sync
+          if (fitAddon.proposeDimensions()) {
+              const { cols, rows } = fitAddon.proposeDimensions()!
+              window.electronAPI.resizeTerminal(id, cols, rows)
+          }
+          
+          // Wake up
+          window.electronAPI.writeTerminal(id, '\r')
+      }, 50)
   }
 
-  const handleClear = () => {
-      terminalRef.current?.clear()
-      terminalRef.current?.focus()
+  const closeTerminal = (id: string, e?: React.MouseEvent) => {
+      e?.stopPropagation()
+      
+      // Cleanup ref
+      terminalRefs.current.get(id)?.dispose()
+      terminalRefs.current.delete(id)
+      addonRefs.current.delete(id)
+      containerRefs.current.delete(id)
+      outputBuffers.current.delete(id)
+
+      // Notify backend
+      window.electronAPI.killTerminal(id) // Needs update
+
+      setTerminals(prev => {
+          const newTerminals = prev.filter(t => t.id !== id)
+          if (activeId === id && newTerminals.length > 0) {
+              setActiveId(newTerminals[newTerminals.length - 1].id)
+          } else if (newTerminals.length === 0) {
+              setActiveId(null)
+          }
+          return newTerminals
+      })
+  }
+
+  const handleFixWithAI = () => {
+      if (!activeId) return
+      const buffer = outputBuffers.current.get(activeId) || []
+      const rawOutput = buffer.join('')
+      const cleanOutput = rawOutput.replace(/\u001b\[[0-9;]*m/g, '').slice(-2000)
+      
+      if (!cleanOutput.trim()) return
+
+      setChatMode('chat')
+      setTerminalVisible(true)
+      setInputPrompt(`I'm getting this error in the terminal. Please analyze it and fix the code:\n\n\`\`\`\n${cleanOutput}\n\`\`\``)
   }
 
   if (!terminalVisible) return null
@@ -209,37 +238,92 @@ export default function TerminalPanel() {
         ${isCollapsed ? 'h-9' : 'h-64'}
     `}>
       {/* Header */}
-      <div className="h-9 min-h-[36px] px-3 flex items-center justify-between border-b border-border-subtle bg-background-secondary select-none">
-         <div 
-            className="flex items-center gap-4 cursor-pointer"
-            onClick={() => setIsCollapsed(!isCollapsed)}
-         >
-             <div className="flex items-center gap-2 text-xs font-medium text-text-primary px-1">
+      <div className="h-9 min-h-[36px] flex items-center justify-between border-b border-border-subtle bg-background-secondary select-none">
+         {/* Tabs */}
+         <div className="flex items-center flex-1 overflow-x-auto no-scrollbar">
+             <div 
+                className="flex items-center gap-2 px-3 cursor-pointer hover:text-text-primary text-text-muted transition-colors mr-2 border-r border-border-subtle"
+                onClick={() => setIsCollapsed(!isCollapsed)}
+             >
                  <TerminalIcon className="w-3.5 h-3.5" />
-                 {t('terminal', language)}
+             </div>
+             
+             {terminals.map(term => (
+                 <div 
+                    key={term.id}
+                    onClick={() => setActiveId(term.id)}
+                    className={`
+                        flex items-center gap-2 px-3 py-1 text-xs cursor-pointer border-r border-border-subtle/50 min-w-[100px] max-w-[200px]
+                        ${activeId === term.id ? 'bg-[#18181b] text-text-primary border-t-2 border-t-accent' : 'text-text-muted hover:bg-surface-active border-t-2 border-t-transparent'}
+                    `}
+                 >
+                     <span className="truncate flex-1">{term.name}</span>
+                     <button 
+                        onClick={(e) => closeTerminal(term.id, e)}
+                        className="p-0.5 rounded hover:bg-surface-hover hover:text-red-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                     >
+                         <X className="w-3 h-3" />
+                     </button>
+                 </div>
+             ))}
+             
+             {/* Add Button */}
+             <div className="relative">
+                 <button 
+                    onClick={() => setShowShellMenu(!showShellMenu)}
+                    className="p-1.5 mx-1 rounded hover:bg-surface-active text-text-muted hover:text-text-primary"
+                 >
+                     <Plus className="w-3.5 h-3.5" />
+                 </button>
+                 
+                 {showShellMenu && (
+                     <div className="absolute top-8 left-0 w-40 bg-surface border border-border-subtle rounded-lg shadow-xl py-1 z-50 flex flex-col">
+                         {availableShells.map(shell => (
+                             <button
+                                key={shell.label}
+                                onClick={() => createTerminal(shell.path, shell.label)}
+                                className="text-left px-3 py-2 text-xs text-text-primary hover:bg-surface-hover"
+                             >
+                                 {shell.label}
+                             </button>
+                         ))}
+                     </div>
+                 )}
              </div>
          </div>
 
-         <div className="flex items-center gap-1">
-             <button onClick={handleCreate} className="p-2 hover:bg-surface-active rounded transition-colors text-text-muted hover:text-text-primary" title={t('newTerminal', language)}>
-                 <Plus className="w-3.5 h-3.5" />
+         {/* Actions */}
+         <div className="flex items-center gap-1 px-2">
+             <button 
+                onClick={handleFixWithAI}
+                className="flex items-center gap-1.5 px-2 py-1 rounded hover:bg-surface-active text-text-muted hover:text-accent transition-colors mr-2"
+                title="Fix with AI"
+             >
+                 <Sparkles className="w-3.5 h-3.5" />
+                 <span className="text-xs font-medium">Fix</span>
              </button>
-             <button onClick={handleClear} className="p-2 hover:bg-surface-active rounded transition-colors text-text-muted hover:text-text-primary" title={t('clearTerminal', language)}>
+             
+             <button onClick={() => activeId && terminalRefs.current.get(activeId)?.clear()} className="p-2 hover:bg-surface-active rounded transition-colors text-text-muted" title="Clear">
                  <Trash2 className="w-3.5 h-3.5" />
              </button>
-             <button onClick={() => setIsCollapsed(!isCollapsed)} className="p-2 hover:bg-surface-active rounded transition-colors text-text-muted hover:text-text-primary">
+             <button onClick={() => setIsCollapsed(!isCollapsed)} className="p-2 hover:bg-surface-active rounded transition-colors text-text-muted">
                  {isCollapsed ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
              </button>
-             <div className="w-px h-3 bg-border-subtle mx-1" />
-             <button onClick={() => setTerminalVisible(false)} className="p-2 hover:bg-surface-active rounded transition-colors text-text-muted hover:text-text-primary" title={t('closeTerminal', language)}>
+             <button onClick={() => setTerminalVisible(false)} className="p-2 hover:bg-surface-active rounded transition-colors text-text-muted" title="Close">
                  <X className="w-3.5 h-3.5" />
              </button>
          </div>
       </div>
 
-      {/* Terminal Container */}
-      <div className={`flex-1 p-0 min-h-0 relative overflow-hidden bg-[#18181b] ${isCollapsed ? 'hidden' : 'block'}`}>
-          <div ref={containerRef} className="h-full w-full pl-2 pt-1" />
+      {/* Terminals Container */}
+      <div className={`flex-1 p-0 min-h-0 relative bg-[#18181b] ${isCollapsed ? 'hidden' : 'block'}`}>
+          {terminals.map(term => (
+              <div 
+                key={term.id}
+                ref={el => { if (el) containerRefs.current.set(term.id, el) }}
+                className={`h-full w-full pl-2 pt-1 ${activeId === term.id ? 'block' : 'hidden'}`}
+              />
+          ))}
       </div>
     </div>
     </>

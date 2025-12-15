@@ -119,18 +119,16 @@ export interface CustomProviderConfig {
 }
 
 // 完整的 Provider 设置
+export interface ProviderModelConfig {
+    enabledModels: string[] // 启用的内置模型
+    customModels: string[]  // 用户添加的模型
+    baseUrl?: string
+    apiKey?: string
+}
+
 export interface ProviderSettings {
-	// 内置 Provider
-	builtin: {
-		[K in BuiltinProviderName]?: {
-			apiKey: string
-			endpoint?: string
-			enabledModels: string[]
-			customModels?: string[]
-		}
-	}
-	// 自定义 Provider
-	custom: CustomProviderConfig[]
+	// 映射 Provider ID 到配置
+    configs: Record<string, ProviderModelConfig>
 }
 
 // 模型选择

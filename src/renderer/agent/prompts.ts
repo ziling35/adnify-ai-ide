@@ -4,6 +4,7 @@
  */
 
 import { ChatMode } from '../store'
+import { rulesService } from './rulesService'
 
 // Search/Replace 块格式 (与 tools.ts 保持一致)
 export const ORIGINAL = '<<<SEARCH'
@@ -139,7 +140,7 @@ ${tools}
 }
 
 // 主系统提示词
-export function buildSystemPrompt(
+export async function buildSystemPrompt(
 	mode: ChatMode,
 	workspacePath: string | null,
 	options?: {
@@ -147,8 +148,11 @@ export function buildSystemPrompt(
 		activeFile?: string
 		customInstructions?: string
 	}
-): string {
+): Promise<string> {
 	const { openFiles = [], activeFile, customInstructions } = options || {}
+
+	// 加载项目规则
+	const projectRules = await rulesService.getRules()
 
 	// 基础身份
 	const identity = mode === 'agent'
@@ -158,7 +162,7 @@ export function buildSystemPrompt(
 	// 系统信息
 	const systemInfo = `## System Information
 
-- Operating System: ${typeof navigator !== 'undefined' ? (navigator.userAgentData?.platform || navigator.platform || 'Unknown') : 'Unknown'}
+- Operating System: ${typeof navigator !== 'undefined' ? ((navigator as any).userAgentData?.platform || navigator.platform || 'Unknown') : 'Unknown'}
 - Workspace: ${workspacePath || 'No workspace open'}
 - Active File: ${activeFile || 'None'}
 - Open Files: ${openFiles.length > 0 ? openFiles.join(', ') : 'None'}
@@ -210,6 +214,15 @@ export function buildSystemPrompt(
 		? `\n## Custom Instructions\n\n${customInstructions}`
 		: ''
 
+	// 项目规则
+	const rulesSection = projectRules?.content
+		? `\n## Project Rules (from ${projectRules.source})
+
+The user has defined the following project-specific rules and guidelines. Follow them strictly:
+
+${projectRules.content}`
+		: ''
+
 	// 组装完整提示词
 	const sections = [
 		identity,
@@ -217,6 +230,7 @@ export function buildSystemPrompt(
 		toolDefs,
 		coreGuidelines,
 		agentGuidelines,
+		rulesSection,
 		customSection,
 	].filter(Boolean)
 

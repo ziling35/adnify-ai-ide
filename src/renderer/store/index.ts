@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { FileItem } from '../types/electron'
 import { Language } from '../i18n'
 import { ToolStatus, ToolApprovalType, Checkpoint } from '../agent/toolTypes'
+import { ProviderModelConfig } from '../types/provider'
 
 export type ChatMode = 'chat' | 'agent'
 export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'groq' | 'ollama' | 'custom'
@@ -9,7 +10,7 @@ export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'gro
 export interface Message {
 	id: string
 	role: 'user' | 'assistant' | 'tool'
-	content: string
+	content: string | Array<{ type: 'text'; text: string } | { type: 'image'; source: { type: 'base64'; media_type: string; data: string } }>
 	toolCallId?: string
 	toolName?: string
 	toolResult?: string
@@ -65,6 +66,7 @@ interface EditorState {
 
 	// Settings
 	llmConfig: LLMConfig
+    providerConfigs: Record<string, ProviderModelConfig>
 	showSettings: boolean
 	language: Language
 	autoApprove: AutoApproveSettings
@@ -111,6 +113,9 @@ interface EditorState {
 	setTerminalVisible: (visible: boolean) => void
 
 	setLLMConfig: (config: Partial<LLMConfig>) => void
+    setProviderConfig: (providerId: string, config: Partial<ProviderModelConfig>) => void
+    addCustomModel: (providerId: string, model: string) => void
+    removeCustomModel: (providerId: string, model: string) => void
 	setShowSettings: (show: boolean) => void
 	setLanguage: (lang: Language) => void
 	setAutoApprove: (settings: Partial<AutoApproveSettings>) => void
@@ -128,6 +133,10 @@ interface EditorState {
 	// Session management
 	currentSessionId: string | null
 	setCurrentSessionId: (id: string | null) => void
+
+    // UI State
+    inputPrompt: string
+    setInputPrompt: (prompt: string) => void
 }
 
 export const useStore = create<EditorState>((set) => ({
@@ -139,6 +148,7 @@ export const useStore = create<EditorState>((set) => ({
 	activeFilePath: null,
 	chatMode: 'chat',
 	messages: [],
+    inputPrompt: '',
 	isStreaming: false,
 	currentToolCalls: [],
 	terminalOutput: [],
@@ -148,6 +158,7 @@ export const useStore = create<EditorState>((set) => ({
 		model: 'gpt-4o',
 		apiKey: '',
 	},
+    providerConfigs: {},
 	showSettings: false,
 	language: 'en',
 	autoApprove: {
@@ -273,6 +284,40 @@ export const useStore = create<EditorState>((set) => ({
 	setLLMConfig: (config) => set((state) => ({
 		llmConfig: { ...state.llmConfig, ...config }
 	})),
+    setProviderConfig: (providerId, config) => set((state) => {
+        const current = state.providerConfigs[providerId] || { enabledModels: [], customModels: [] }
+        return {
+            providerConfigs: {
+                ...state.providerConfigs,
+                [providerId]: { ...current, ...config }
+            }
+        }
+    }),
+    addCustomModel: (providerId, model) => set((state) => {
+        const current = state.providerConfigs[providerId] || { enabledModels: [], customModels: [] }
+        if (current.customModels.includes(model)) return {}
+        return {
+            providerConfigs: {
+                ...state.providerConfigs,
+                [providerId]: {
+                    ...current,
+                    customModels: [...current.customModels, model]
+                }
+            }
+        }
+    }),
+    removeCustomModel: (providerId, model) => set((state) => {
+        const current = state.providerConfigs[providerId] || { enabledModels: [], customModels: [] }
+        return {
+            providerConfigs: {
+                ...state.providerConfigs,
+                [providerId]: {
+                    ...current,
+                    customModels: current.customModels.filter(m => m !== model)
+                }
+            }
+        }
+    }),
 	setShowSettings: (show) => set({ showSettings: show }),
 	setLanguage: (lang) => set({ language: lang }),
 	setAutoApprove: (settings) => set((state) => ({
@@ -318,4 +363,7 @@ export const useStore = create<EditorState>((set) => ({
 
 	// Session management
 	setCurrentSessionId: (id) => set({ currentSessionId: id }),
+
+    // UI State
+    setInputPrompt: (prompt) => set({ inputPrompt: prompt }),
 }))

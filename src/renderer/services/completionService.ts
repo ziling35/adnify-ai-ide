@@ -1,7 +1,7 @@
 /**
  * Code Completion Service
  * Provides AI-powered code completion with debounce and cancellation support
- * Requirements: 1.1, 1.4, 1.5
+ * Enhanced with FIM (Fill-in-the-Middle) support and better context awareness
  */
 
 import { useStore } from '../store'
@@ -22,6 +22,10 @@ export interface CompletionContext {
   language: string
   openFiles: Array<{ path: string; content: string }>
   recentFiles?: Array<{ path: string; content: string }>
+  // Enhanced context
+  currentFunction?: string  // Current function/method name
+  imports?: string[]  // Import statements
+  symbols?: string[]  // Local symbols (variables, functions)
 }
 
 export interface CompletionSuggestion {
@@ -42,17 +46,38 @@ export interface CompletionOptions {
   maxTokens: number
   temperature: number
   triggerCharacters: string[]
+  // Enhanced options
+  fimEnabled: boolean  // Use FIM format for supported models
+  contextLines: number  // Lines of context to include
+  multilineSuggestions: boolean  // Allow multi-line completions
 }
+
+// FIM-capable models
+const FIM_MODELS = [
+  'deepseek-coder',
+  'codellama',
+  'starcoder',
+  'code-llama',
+  'deepseek',
+  'qwen-coder',
+  'yi-coder',
+]
 
 
 // Default options
 const DEFAULT_OPTIONS: CompletionOptions = {
   enabled: true,
-  debounceMs: 150,
+  debounceMs: 300,  // Increased for better UX
   maxTokens: 256,
-  temperature: 0.2,
-  triggerCharacters: ['.', '(', '{', '[', '"', "'", '/', '@', '#', ' ']
+  temperature: 0.1,  // Lower for more deterministic completions
+  triggerCharacters: ['.', '(', '{', '[', '"', "'", '/', ' ', '\n'],
+  fimEnabled: true,
+  contextLines: 50,
+  multilineSuggestions: true,
 }
+
+// Stop sequences for completion
+const STOP_SEQUENCES = ['\n\n', '```', '// ', '/* ', '"""', "'''"]
 
 // ============ Debounce Utility ============
 
@@ -247,30 +272,37 @@ class CompletionService {
     filePath: string,
     fileContent: string,
     cursorPosition: Position,
-    prefixLines: number = 50,
-    suffixLines: number = 20
+    prefixLines?: number,
+    suffixLines?: number
   ): CompletionContext {
+    const actualPrefixLines = prefixLines ?? this.options.contextLines
+    const actualSuffixLines = suffixLines ?? Math.floor(this.options.contextLines / 2)
+    
     const lines = fileContent.split('\n')
     const { line, column } = cursorPosition
     
     // Calculate prefix (text before cursor)
-    const startLine = Math.max(0, line - prefixLines)
+    const startLine = Math.max(0, line - actualPrefixLines)
     const prefixLineArray = lines.slice(startLine, line)
     const currentLinePrefix = lines[line]?.substring(0, column) || ''
     const prefix = [...prefixLineArray, currentLinePrefix].join('\n')
     
     // Calculate suffix (text after cursor)
     const currentLineSuffix = lines[line]?.substring(column) || ''
-    const endLine = Math.min(lines.length, line + suffixLines)
+    const endLine = Math.min(lines.length, line + actualSuffixLines)
     const suffixLineArray = lines.slice(line + 1, endLine)
     const suffix = [currentLineSuffix, ...suffixLineArray].join('\n')
     
     // Get open files from store
     const state = useStore.getState()
     const openFiles = state.openFiles
-      .filter(f => f.path !== filePath)
-      .slice(0, 5)
-      .map(f => ({ path: f.path, content: f.content }))
+      .filter((f: { path: string; content: string }) => f.path !== filePath)
+      .slice(0, 3)  // Reduced for faster completions
+      .map((f: { path: string; content: string }) => ({ path: f.path, content: f.content }))
+    
+    // Extract enhanced context
+    const currentFunction = this.extractCurrentFunction(fileContent, line)
+    const imports = this.extractImports(fileContent)
     
     return {
       filePath,
@@ -280,15 +312,17 @@ class CompletionService {
       suffix,
       language: getLanguageFromPath(filePath),
       openFiles,
-      recentFiles: this.getRecentFilesContent()
+      recentFiles: this.getRecentFilesContent(),
+      currentFunction,
+      imports,
     }
   }
 
   private getRecentFilesContent(): Array<{ path: string; content: string }> {
     const state = useStore.getState()
     return this.recentEditedFiles
-      .map(f => {
-        const openFile = state.openFiles.find(of => of.path === f.path)
+      .map((f: { path: string; timestamp: number }) => {
+        const openFile = state.openFiles.find((of: { path: string; content: string }) => of.path === f.path)
         return openFile ? { path: f.path, content: openFile.content } : null
       })
       .filter((f): f is { path: string; content: string } => f !== null)
@@ -404,26 +438,110 @@ class CompletionService {
 
 
   /**
+   * Check if current model supports FIM format
+   */
+  private isFIMModel(model: string): boolean {
+    const modelLower = model.toLowerCase()
+    return FIM_MODELS.some(fim => modelLower.includes(fim))
+  }
+
+  /**
    * Build FIM (Fill-in-the-Middle) prompt
+   * Uses proper FIM format for supported models
    */
   private buildFIMPrompt(context: CompletionContext): string {
-    const { prefix, suffix, language, openFiles } = context
+    const { prefix, suffix, language, openFiles, currentFunction, imports } = context
+    const state = useStore.getState()
+    const model = state.llmConfig.model || ''
     
-    // Build context from related files
-    let relatedContext = ''
+    // Check if model supports native FIM format
+    if (this.options.fimEnabled && this.isFIMModel(model)) {
+      // DeepSeek Coder FIM format
+      if (model.toLowerCase().includes('deepseek')) {
+        return `<｜fim▁begin｜>${prefix}<｜fim▁hole｜>${suffix}<｜fim▁end｜>`
+      }
+      // CodeLlama/StarCoder FIM format
+      return `<PRE>${prefix}<SUF>${suffix}<MID>`
+    }
+    
+    // Build enhanced context for non-FIM models
+    let contextStr = ''
+    
+    // Add imports context
+    if (imports && imports.length > 0) {
+      contextStr += `// Imports in this file:\n${imports.slice(0, 10).join('\n')}\n\n`
+    }
+    
+    // Add current function context
+    if (currentFunction) {
+      contextStr += `// Currently editing function: ${currentFunction}\n\n`
+    }
+    
+    // Add related files context (minimal)
     if (openFiles.length > 0) {
-      relatedContext = openFiles
-        .slice(0, 3)
-        .map(f => `// File: ${f.path}\n${f.content.slice(0, 2000)}`)
+      const relatedSnippets = openFiles
+        .slice(0, 2)
+        .map(f => {
+          const fileName = f.path.split(/[\\/]/).pop()
+          // Only include relevant parts (first 500 chars)
+          return `// ${fileName}:\n${f.content.slice(0, 500)}...`
+        })
         .join('\n\n')
-      relatedContext = `Related files:\n${relatedContext}\n\n`
+      contextStr += `// Related files:\n${relatedSnippets}\n\n`
     }
 
-    return `${relatedContext}Language: ${language}
-Complete the code at the cursor position marked with <CURSOR>.
-Only output the completion, no explanations.
+    // Build the prompt
+    return `${contextStr}// Language: ${language}
+// Complete the code at <CURSOR>. Output ONLY the completion code, nothing else.
 
 ${prefix}<CURSOR>${suffix}`
+  }
+
+  /**
+   * Extract current function name from code
+   */
+  private extractCurrentFunction(content: string, line: number): string | undefined {
+    const lines = content.split('\n')
+    
+    // Search backwards for function definition
+    for (let i = line; i >= 0 && i > line - 50; i--) {
+      const lineContent = lines[i]
+      
+      // Match various function patterns
+      const patterns = [
+        /function\s+(\w+)/,
+        /const\s+(\w+)\s*=\s*(?:async\s*)?\(/,
+        /(\w+)\s*\([^)]*\)\s*{/,
+        /(\w+)\s*=\s*\([^)]*\)\s*=>/,
+        /def\s+(\w+)/,  // Python
+        /fn\s+(\w+)/,   // Rust
+      ]
+      
+      for (const pattern of patterns) {
+        const match = lineContent.match(pattern)
+        if (match) {
+          return match[1]
+        }
+      }
+    }
+    
+    return undefined
+  }
+
+  /**
+   * Extract imports from code
+   */
+  private extractImports(content: string): string[] {
+    const imports: string[] = []
+    const lines = content.split('\n')
+    
+    for (const line of lines.slice(0, 50)) {  // Only check first 50 lines
+      if (line.match(/^import\s+/) || line.match(/^from\s+/) || line.match(/^const\s+.*=\s*require/)) {
+        imports.push(line.trim())
+      }
+    }
+    
+    return imports
   }
 
   /**

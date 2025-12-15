@@ -3,7 +3,7 @@ import {
   Send, Sparkles,
   Trash2, StopCircle,
   FileText, AlertTriangle,
-  History
+  History, Image as ImageIcon, X, Plus
 } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
@@ -21,51 +21,57 @@ import { checkpointService } from '../agent/checkpointService'
 function ChatMessage({ message }: { message: Message }) {
   const isUser = message.role === 'user'
 
-  // Requirements 1.6, 3.2: Tool outputs are now embedded within ToolCallCard
-  // Hide separate tool messages to avoid duplication
   if (message.role === 'tool') {
-      // Return null to hide tool messages - results are shown inline in ToolCallCard
       return null
   }
+
+  // Helper to extract text and images
+  const textContent = typeof message.content === 'string' 
+      ? message.content 
+      : Array.isArray(message.content) 
+        ? message.content.filter(c => c.type === 'text').map(c => (c as any).text).join('')
+        : ''
+  
+  const images = Array.isArray(message.content) 
+      ? message.content.filter(c => c.type === 'image') 
+      : []
 
   return (
     <div className={`
         group flex gap-4 py-6 px-5 transition-colors border-b border-border-subtle/20
         ${isUser ? 'bg-transparent' : 'bg-transparent'}
-    `}>
-      {/* Avatar */}
+    `}> {/* Avatar */}
       <div className={`
         w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 mt-0.5 text-xs font-medium shadow-sm
         ${isUser 
             ? 'bg-surface text-text-secondary border border-border-subtle' 
             : 'bg-gradient-to-br from-accent to-purple-600 text-white shadow-glow border-none'}
-      `}>
-        {isUser ? 'You' : <Sparkles className="w-4 h-4" />}
+      `}> {isUser ? 'You' : <Sparkles className="w-4 h-4" />} {/* Content */}
       </div>
 
-      {/* Content */}
-      <div className="flex-1 min-w-0">
-         <div className="flex items-center gap-2 mb-2">
-             <span className="text-xs font-bold text-text-primary tracking-wide">
-                 {isUser ? 'User' : 'Adnify Agent'}
-             </span>
-             <span className="text-[10px] text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
-                 {new Date(message.timestamp).toLocaleTimeString()}
-             </span>
-         </div>
+      <div className="flex-1 min-w-0"> {/* Image Grid */}
+            {images.length > 0 && (
+                <div className="flex flex-wrap gap-2 mb-3">
+                    {images.map((img: any, i) => (
+                        <div key={i} className="rounded-lg overflow-hidden border border-border-subtle max-w-[240px]">
+                            <img 
+                                src={img.source.type === 'base64' ? `data:${img.source.media_type};base64,${img.source.data}` : img.source.data} 
+                                alt="User upload" 
+                                className="max-w-full h-auto object-cover"
+                            />
+                        </div>
+                    ))}
+                </div>
+            )}
 
-        <div className={`text-sm leading-7 text-text-secondary ${isUser ? 'text-text-primary' : ''}`}>
             <ReactMarkdown
               className="prose prose-invert prose-sm max-w-none break-words"
               components={{
                 code({ className, children, node, ...props }) {
                   const match = /language-(\w+)/.exec(className || '')
-                  // 检查是否是真正的代码块（有语言标识或者是 pre 的子元素）
-                  const isCodeBlock = match || (node?.position?.start?.line !== node?.position?.end?.line)
-                  // 检查内容是否像代码（包含特殊字符）
                   const content = String(children)
-                  const looksLikeCode = /[{}()[\];=<>]/.test(content) || content.includes('\n')
-                  const isInline = !isCodeBlock && !looksLikeCode
+                  const isCodeBlock = match || (node?.position?.start?.line !== node?.position?.end?.line)
+                  const isInline = !isCodeBlock && !content.includes('\n')
                   
                   return isInline ? (
                     <code className="bg-surface-active/50 border border-white/5 px-1.5 py-0.5 rounded text-accent font-mono text-xs" {...props}>
@@ -75,7 +81,6 @@ function ChatMessage({ message }: { message: Message }) {
                     <div className="relative group/code my-4 rounded-lg overflow-hidden border border-border-subtle bg-[#0d0d0d] shadow-sm">
                         <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/5">
                             <span className="text-[10px] text-text-muted font-mono">{match?.[1] || 'code'}</span>
-                            {/* Future: Add Copy Button here */}
                         </div>
                         <SyntaxHighlighter
                             style={vscDarkPlus}
@@ -84,7 +89,7 @@ function ChatMessage({ message }: { message: Message }) {
                             className="!bg-transparent !p-4 !m-0 !text-xs custom-scrollbar"
                             customStyle={{ background: 'transparent', margin: 0 }}
                             wrapLines={true}
-                            wrapLongLines={true} // Prevent horizontal scrolling for long text
+                            wrapLongLines={true} 
                         >
                             {String(children).replace(/\n$/, '')}
                         </SyntaxHighlighter>
@@ -98,22 +103,29 @@ function ChatMessage({ message }: { message: Message }) {
                 blockquote: ({children}) => <blockquote className="border-l-2 border-accent/50 pl-4 py-1 my-2 bg-accent/5 italic text-text-muted rounded-r">{children}</blockquote>
               }}
             >
-              {message.content}
+              {textContent}
             </ReactMarkdown>
           {message.isStreaming && (
             <span className="inline-block w-2 h-4 bg-accent animate-pulse ml-1 align-middle rounded-sm" />
           )}
         </div>
       </div>
-    </div>
   )
+}
+
+interface PendingImage {
+    id: string
+    file: File
+    previewUrl: string
+    base64?: string
 }
 
 export default function ChatPanel() {
   const {
     chatMode, setChatMode, messages, isStreaming, currentToolCalls,
     clearMessages, llmConfig, pendingToolCall,
-    setCurrentSessionId, addMessage, workspacePath, openFile, setActiveFile
+    setCurrentSessionId, addMessage, workspacePath, openFile, setActiveFile,
+    inputPrompt, setInputPrompt
   } = useStore()
   const {
     sendMessage,
@@ -122,76 +134,8 @@ export default function ChatPanel() {
     rejectCurrentTool,
   } = useAgent()
 
-  // 处理工具调用中的文件点击 - 打开文件并显示 diff
-  // Requirements: 1.2, 1.3 - 点击文件名打开文件并显示 diff
-  const handleToolFileClick = useCallback(async (filePath: string) => {
-    // 解析完整路径
-    let fullPath = filePath
-    if (workspacePath && !filePath.startsWith('/') && !filePath.match(/^[a-zA-Z]:/)) {
-      const sep = workspacePath.includes('\\') ? '\\' : '/'
-      fullPath = `${workspacePath}${sep}${filePath}`
-    }
-    
-    // 读取当前文件内容
-    const currentContent = await window.electronAPI.readFile(fullPath)
-    if (currentContent === null) {
-      console.warn('[ToolFileClick] Failed to read file:', fullPath)
-      return
-    }
-    
-    // 从 checkpointService 获取检查点（这是实际存储快照的地方）
-    const serviceCheckpoints = checkpointService.getCheckpoints()
-    // 同时也检查 store 中的检查点
-    const { checkpoints: storeCheckpoints } = useStore.getState()
-    const allCheckpoints = [...serviceCheckpoints, ...storeCheckpoints]
-    
-    console.log('[ToolFileClick] Looking for file:', filePath, 'fullPath:', fullPath)
-    console.log('[ToolFileClick] Total checkpoints:', allCheckpoints.length)
-    
-    let originalContent: string | undefined
-    
-    // 规范化路径函数
-    const normalizePath = (p: string) => p.replace(/\\/g, '/').toLowerCase()
-    const normalizedFullPath = normalizePath(fullPath)
-    const normalizedFilePath = normalizePath(filePath)
-    
-    // 从最新的检查点开始查找
-    for (let i = allCheckpoints.length - 1; i >= 0; i--) {
-      const checkpoint = allCheckpoints[i]
-      if (!checkpoint.snapshots) continue
-      
-      const snapshotPaths = Object.keys(checkpoint.snapshots)
-      console.log('[ToolFileClick] Checkpoint', i, 'has snapshots:', snapshotPaths)
-      
-      for (const snapshotPath of snapshotPaths) {
-        const normalizedSnapshotPath = normalizePath(snapshotPath)
-        
-        // 精确匹配或路径结尾匹配
-        if (normalizedSnapshotPath === normalizedFullPath ||
-            normalizedSnapshotPath === normalizedFilePath ||
-            normalizedSnapshotPath.endsWith('/' + normalizedFilePath) ||
-            normalizedFullPath.endsWith('/' + normalizePath(snapshotPath.split(/[/\\]/).pop() || ''))) {
-          originalContent = checkpoint.snapshots[snapshotPath].content
-          console.log('[ToolFileClick] Found match! snapshotPath:', snapshotPath)
-          break
-        }
-      }
-      if (originalContent) break
-    }
-    
-    console.log('[ToolFileClick] Original content found:', !!originalContent)
-    console.log('[ToolFileClick] Content differs:', originalContent !== currentContent)
-    
-    // 如果找到原始内容且与当前内容不同，显示 diff 视图
-    if (originalContent && originalContent !== currentContent) {
-      openFile(fullPath, currentContent, originalContent)
-    } else {
-      // 否则正常打开文件
-      openFile(fullPath, currentContent)
-    }
-    setActiveFile(fullPath)
-  }, [workspacePath, openFile, setActiveFile])
   const [input, setInput] = useState('')
+  const [images, setImages] = useState<PendingImage[]>([])
   const [showSessions, setShowSessions] = useState(false)
   const [showFileMention, setShowFileMention] = useState(false)
   const [mentionQuery, setMentionQuery] = useState('')
@@ -199,9 +143,64 @@ export default function ChatPanel() {
   const messagesEndRef = useRef<HTMLDivElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const inputContainerRef = useRef<HTMLDivElement>(null)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const [isDragging, setIsDragging] = useState(false)
 
-  // 检测输入中的 @file 引用
+  // External prompt (from Command Palette)
+  useEffect(() => {
+      if (inputPrompt) {
+          setInput(inputPrompt)
+          setInputPrompt('')
+          setTimeout(() => textareaRef.current?.focus(), 100)
+      }
+  }, [inputPrompt, setInputPrompt])
+
+  // Tool tool file handling
+  const handleToolFileClick = useCallback(async (filePath: string) => {
+    let fullPath = filePath
+    if (workspacePath && !filePath.startsWith('/') && !filePath.match(/^[a-zA-Z]:/)) {
+      const sep = workspacePath.includes('\\') ? '\\': '/'
+      fullPath = `${workspacePath}${sep}${filePath}`
+    }
+    const currentContent = await window.electronAPI.readFile(fullPath)
+    if (currentContent === null) return
+    
+    // Checkpoints logic
+    const serviceCheckpoints = checkpointService.getCheckpoints()
+    const { checkpoints: storeCheckpoints } = useStore.getState()
+    const allCheckpoints = [...serviceCheckpoints, ...storeCheckpoints]
+    let originalContent: string | undefined
+    const normalizePath = (p: string) => p.replace(/\\/g, '/').toLowerCase()
+    const normalizedFullPath = normalizePath(fullPath)
+    const normalizedFilePath = normalizePath(filePath)
+    
+    for (let i = allCheckpoints.length - 1; i >= 0; i--) {
+      const checkpoint = allCheckpoints[i]
+      if (!checkpoint.snapshots) continue
+      const snapshotPaths = Object.keys(checkpoint.snapshots)
+      for (const snapshotPath of snapshotPaths)
+ {
+        const normalizedSnapshotPath = normalizePath(snapshotPath)
+        if (normalizedSnapshotPath === normalizedFullPath ||
+            normalizedSnapshotPath === normalizedFilePath ||
+            normalizedSnapshotPath.endsWith('/' + normalizedFilePath) ||
+            normalizedFullPath.endsWith('/' + normalizePath(snapshotPath.split(/[\\/]/).pop() || ''))) {
+          originalContent = checkpoint.snapshots[snapshotPath].content
+          break
+        }
+      }
+      if (originalContent) break
+    }
+    
+    if (originalContent && originalContent !== currentContent) {
+      openFile(fullPath, currentContent, originalContent)
+    } else {
+      openFile(fullPath, currentContent)
+    }
+    setActiveFile(fullPath)
+  }, [workspacePath, openFile, setActiveFile])
+
+  // File mentions detection
   const fileRefs = useMemo(() => {
     const refs: string[] = []
     const regex = /@(?:file:)?([^\s@]+\.[a-zA-Z0-9]+)/g
@@ -212,7 +211,38 @@ export default function ChatPanel() {
     return refs
   }, [input])
 
-  // 拖拽处理
+  // Image handling
+  const addImage = async (file: File) => {
+      const id = crypto.randomUUID()
+      const previewUrl = URL.createObjectURL(file)
+      
+      const reader = new FileReader()
+      reader.onload = () => {
+          const result = reader.result as string
+          const base64 = result.split(',')[1]
+          setImages(prev => prev.map(img => img.id === id ? { ...img, base64 } : img))
+      }
+      reader.readAsDataURL(file)
+
+      setImages(prev => [...prev, { id, file, previewUrl }])
+  }
+
+  const removeImage = (id: string) => {
+      setImages(prev => prev.filter(img => img.id !== id))
+  }
+
+  const handlePaste = useCallback((e: React.ClipboardEvent) => {
+      const items = e.clipboardData.items
+      for (const item of items) {
+          if (item.type.startsWith('image/')) {
+              e.preventDefault()
+              const file = item.getAsFile()
+              if (file) addImage(file)
+          }
+      }
+  }, [])
+
+  // Drag and Drop
   const handleDragOver = useCallback((e: React.DragEvent) => {
       e.preventDefault()
       setIsDragging(true)
@@ -225,37 +255,35 @@ export default function ChatPanel() {
 
   const handleDrop = useCallback((e: React.DragEvent) => {
       e.preventDefault()
-      e.stopPropagation() // Critical to prevent parent handlers
+      e.stopPropagation()
       setIsDragging(false)
       
-      let paths: string[] = []
+      // Check for files first (images)
+      const files = Array.from(e.dataTransfer.files)
+      const imageFiles = files.filter(f => f.type.startsWith('image/'))
+      
+      if (imageFiles.length > 0) {
+          imageFiles.forEach(addImage)
+          return
+      }
 
-      // 1. Try internal drag (Sidebar)
+      // If not images, check for text/paths
+      let paths: string[] = []
       const internalPath = e.dataTransfer.getData('application/adnify-file-path')
       if (internalPath) {
           paths.push(internalPath)
       } else {
-          // 2. Try external drag (System)
-          const files = Array.from(e.dataTransfer.files)
-          if (files.length > 0) {
-             // Electron exposes 'path' on File objects
-             paths = files.map(f => (f as File & { path?: string }).path).filter((p): p is string => Boolean(p))
+          const nonImages = files.filter(f => !f.type.startsWith('image/'))
+          if (nonImages.length > 0) {
+             paths = nonImages.map(f => (f as File & { path?: string }).path).filter((p): p is string => Boolean(p))
           }
       }
       
       if (paths.length > 0) {
           setInput(prev => {
               const prefix = prev.trim() ? prev + ' ' : ''
-              // Convert absolute paths to simple filenames or relative paths if possible
-              // For now, let's use the basename to keep it clean in the UI, 
-              // assuming the agent can handle fuzzy matching or we have full path in context context.
-              // BUT, to be safe, let's use the full path but maybe show it shorter later?
-              // The current logic expects just the name for Mentions to trigger, but here we are direct inserting.
-              // Let's insert basename for readability, and let the Agent resolve it, OR
-              // if we want to be precise, use the full path.
-              // Let's use basename for UX (like @App.tsx), assuming unique names for now.
               const mentions = paths.map(p => {
-                  const name = p.split(/[/\\]/).pop()
+                  const name = p.split(/[\\/]/).pop()
                   return `@${name}` 
               }).join(' ')
               return prefix + mentions + ' '
@@ -264,13 +292,11 @@ export default function ChatPanel() {
       }
   }, [])
 
-  // 检测 @ 触发
   const handleInputChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
     const value = e.target.value
     const cursorPos = e.target.selectionStart || 0
     setInput(value)
 
-    // 检查光标前是否有未完成的 @ 引用
     const textBeforeCursor = value.slice(0, cursorPos)
     const atMatch = textBeforeCursor.match(/@([^\s@]*)$/)
 
@@ -278,7 +304,7 @@ export default function ChatPanel() {
       setMentionQuery(atMatch[1])
       if (inputContainerRef.current) {
         const rect = inputContainerRef.current.getBoundingClientRect()
-        setMentionPosition({ x: rect.left + 16, y: rect.top - 200 }) // Position above input
+        setMentionPosition({ x: rect.left + 16, y: rect.top - 200 })
       }
       setShowFileMention(true)
     } else {
@@ -287,13 +313,11 @@ export default function ChatPanel() {
     }
   }, [])
 
-  // 选择文件引用
   const handleSelectFile = useCallback((filePath: string) => {
     const cursorPos = textareaRef.current?.selectionStart || input.length
     const textBeforeCursor = input.slice(0, cursorPos)
     const textAfterCursor = input.slice(cursorPos)
     
-    // 找到 @ 的位置并替换
     const atIndex = textBeforeCursor.lastIndexOf('@')
     if (atIndex !== -1) {
       const newInput = textBeforeCursor.slice(0, atIndex) + '@' + filePath + ' ' + textAfterCursor
@@ -310,11 +334,34 @@ export default function ChatPanel() {
   }, [messages, currentToolCalls])
 
   const handleSubmit = useCallback(async () => {
-    if (!input.trim() || isStreaming) return
-    const userMessage = input.trim()
+    if ((!input.trim() && images.length === 0) || isStreaming) return
+    
+    let userMessage: string | any[] = input.trim()
+    
+    if (images.length > 0) {
+        const readyImages = images.filter(img => img.base64)
+        if (readyImages.length !== images.length) {
+            console.warn('Waiting for image processing...')
+            return
+        }
+
+        userMessage = [
+            { type: 'text', text: input.trim() },
+            ...readyImages.map(img => ({
+                type: 'image',
+                source: {
+                    type: 'base64',
+                    media_type: img.file.type,
+                    data: img.base64
+                }
+            }))
+        ]
+    }
+
     setInput('')
-    await sendMessage(userMessage)
-  }, [input, isStreaming, sendMessage])
+    setImages([])
+    await sendMessage(userMessage as any)
+  }, [input, images, isStreaming, sendMessage])
 
   const handleLoadSession = useCallback(async (sessionId: string) => {
     const session = await sessionService.getSession(sessionId)
@@ -324,7 +371,7 @@ export default function ChatPanel() {
       session.messages.forEach(msg => {
         addMessage({
           role: msg.role,
-          content: msg.content,
+          content: msg.content as any, // Cast for compatibility
           toolCallId: msg.toolCallId,
           toolName: msg.toolName,
         })
@@ -335,14 +382,12 @@ export default function ChatPanel() {
   }, [clearMessages, setChatMode, addMessage, setCurrentSessionId])
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    // 如果文件选择弹窗打开，不处理回车（让弹窗处理）
     if (showFileMention) {
       if (e.key === 'Escape') {
         e.preventDefault()
         setShowFileMention(false)
         setMentionQuery('')
       }
-      // Enter, ArrowUp, ArrowDown 由 FileMentionPopup 处理
       if (['Enter', 'ArrowUp', 'ArrowDown', 'Tab'].includes(e.key)) {
         e.preventDefault()
         return
@@ -363,13 +408,12 @@ export default function ChatPanel() {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-    >
-      {/* Header */}
+    > {/* Header */}
       <div className="h-12 flex items-center justify-between px-4 border-b border-border bg-background/50 backdrop-blur-sm z-20">
         <div className="flex bg-surface rounded-lg p-0.5 border border-border-subtle">
             <button
             onClick={() => setChatMode('chat')}
-            className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+            className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${ 
                 chatMode === 'chat'
                 ? 'bg-background text-text-primary shadow-sm'
                 : 'text-text-muted hover:text-text-primary'
@@ -379,7 +423,7 @@ export default function ChatPanel() {
             </button>
             <button
             onClick={() => setChatMode('agent')}
-            className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${
+            className={`px-3 py-1 rounded-md text-xs font-medium transition-all ${ 
                 chatMode === 'agent'
                 ? 'text-accent bg-accent/10 shadow-sm'
                 : 'text-text-muted hover:text-text-primary'
@@ -444,7 +488,7 @@ export default function ChatPanel() {
             ))}
         </div>
 
-        {/* Current Tool Calls Area - 使用新的 ToolCallCard */}
+        {/* Current Tool Calls Area */}
         {currentToolCalls.length > 0 && (
             <div className="px-4 py-2 space-y-1.5 animate-fade-in">
                 {currentToolCalls.map((toolCall) => (
@@ -482,8 +526,23 @@ export default function ChatPanel() {
             ${isStreaming 
                 ? 'border-accent/50 bg-accent/5' 
                 : 'border-border-subtle bg-surface focus-within:border-accent focus-within:ring-1 focus-within:ring-accent/20 focus-within:shadow-glow'}
-        `}>
-          
+        `}> {/* Image Previews */}
+              {images.length > 0 && (
+                  <div className="flex gap-2 p-3 pb-0 overflow-x-auto custom-scrollbar">
+                      {images.map(img => (
+                          <div key={img.id} className="relative group/img flex-shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-border-subtle">
+                              <img src={img.previewUrl} alt="preview" className="w-full h-full object-cover" />
+                              <button
+                                  onClick={() => removeImage(img.id)}
+                                  className="absolute top-0.5 right-0.5 p-0.5 bg-black/50 rounded-full text-white hover:bg-red-500 transition-colors opacity-0 group-hover/img:opacity-100"
+                              >
+                                  <X className="w-3 h-3" />
+                              </button>
+                          </div>
+                      ))}
+                  </div>
+              )}
+
           {/* File Chips */}
           {fileRefs.length > 0 && (
              <div className="flex flex-wrap gap-1.5 px-3 pt-3">
@@ -501,7 +560,8 @@ export default function ChatPanel() {
             value={input}
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
-            placeholder={hasApiKey ? "Ask anything... (Type @ to add context)" : "Configure API Key..."}
+            onPaste={handlePaste}
+            placeholder={hasApiKey ? "Ask anything... (Paste images, Type @ to context)" : "Configure API Key..."}
             disabled={!hasApiKey || !!pendingToolCall}
             className="w-full bg-transparent border-none rounded-xl px-4 py-3 pr-12
                      text-sm text-text-primary placeholder-text-muted/60 resize-none
@@ -510,14 +570,35 @@ export default function ChatPanel() {
             style={{ minHeight: '52px', maxHeight: '200px' }}
           />
           
-          <div className="absolute right-2 bottom-2">
+          <div className="absolute right-2 bottom-2 flex items-center gap-1">
+            <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept="image/*" 
+                multiple 
+                onChange={(e) => {
+                    if (e.target.files) {
+                        Array.from(e.target.files).forEach(addImage)
+                    }
+                    e.target.value = ''
+                }}
+            />
+            <button
+                onClick={() => fileInputRef.current?.click()}
+                className="p-2 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                title="Upload image"
+            >
+                <ImageIcon className="w-4 h-4" />
+            </button>
+
             <button
                 onClick={isStreaming ? abort : handleSubmit}
-                disabled={!hasApiKey || (!input.trim() && !isStreaming) || !!pendingToolCall}
+                disabled={!hasApiKey || ((!input.trim() && images.length === 0) && !isStreaming) || !!pendingToolCall}
                 className={`p-2 rounded-lg transition-all flex items-center justify-center
                 ${isStreaming
                     ? 'bg-status-error/10 text-status-error hover:bg-status-error/20'
-                    : input.trim() 
+                    : (input.trim() || images.length > 0)
                         ? 'bg-accent text-white shadow-glow hover:bg-accent-hover' 
                         : 'text-text-muted hover:bg-surface-hover hover:text-text-primary'}
                 `}

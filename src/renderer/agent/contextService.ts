@@ -99,14 +99,27 @@ export function formatFileContext(file: FileContext): string {
 	return `**${file.path}** (${lineCount} lines):\n\`\`\`${lang}\n${content}\n\`\`\``
 }
 
+export async function formatProjectStructure(rootPath: string): Promise<string> {
+    const tree = await window.electronAPI.getFileTree(rootPath, 3) // 限制深度为3
+    return `**Project Structure:**\n\`\`\`\n${tree}\n\`\`\``
+}
+
 /**
  * 构建上下文字符串
  */
-export function buildContextString(files: FileContext[]): string {
-	if (files.length === 0) return ''
-	
-	const sections = files.map(formatFileContext)
-	return '---\n**Context:**\n\n' + sections.join('\n\n')
+export function buildContextString(files: FileContext[], projectStructure?: string): string {
+    let context = '---\n**Context:**\n\n'
+    
+    if (projectStructure) {
+        context += projectStructure + '\n\n'
+    }
+    
+	if (files.length > 0) {
+        const sections = files.map(formatFileContext)
+	    context += sections.join('\n\n')
+    }
+    
+    return context
 }
 
 /**
@@ -117,22 +130,32 @@ export async function collectContext(
 	options?: {
 		includeActiveFile?: boolean
 		includeOpenFiles?: boolean
+        includeProjectStructure?: boolean
 		maxChars?: number
 	}
 ): Promise<{
 	files: FileContext[]
+    projectStructure?: string
 	cleanedMessage: string
 	totalChars: number
 }> {
 	const {
 		includeActiveFile = true,
 		includeOpenFiles = false,
+        includeProjectStructure = true,
 		maxChars = MAX_CONTEXT_CHARS,
 	} = options || {}
 	
 	const state = useStore.getState()
 	const files: FileContext[] = []
 	let totalChars = 0
+    let projectStructure = ''
+
+    // 0. 获取项目结构
+    if (includeProjectStructure && state.workspacePath) {
+        projectStructure = await formatProjectStructure(state.workspacePath)
+        totalChars += projectStructure.length
+    }
 	
 	// 1. 解析 @file 引用
 	const refs = parseFileReferences(message)
@@ -196,7 +219,7 @@ export async function collectContext(
 	// 按相关性排序
 	files.sort((a, b) => b.relevance - a.relevance)
 	
-	return { files, cleanedMessage, totalChars }
+	return { files, projectStructure, cleanedMessage, totalChars }
 }
 
 /**
@@ -206,6 +229,7 @@ export const contextService = {
 	parseFileReferences,
 	cleanFileReferences,
 	formatFileContext,
+    formatProjectStructure,
 	buildContextString,
 	collectContext,
 }

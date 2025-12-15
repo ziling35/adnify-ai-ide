@@ -34,7 +34,7 @@ export class LLMService {
 					this.providers.set(key, new OpenAIProvider(config.apiKey, config.baseUrl))
 					break
 				case 'anthropic':
-					this.providers.set(key, new AnthropicProvider(config.apiKey))
+					this.providers.set(key, new AnthropicProvider(config.apiKey, config.baseUrl))
 					break
 				case 'gemini':
 					this.providers.set(key, new GeminiProvider(config.apiKey))

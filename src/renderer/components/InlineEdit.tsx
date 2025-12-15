@@ -4,8 +4,9 @@
  */
 
 import { useState, useRef, useEffect, useCallback } from 'react'
-import { X, Sparkles, Check, Loader2 } from 'lucide-react'
+import { X, Sparkles, Check, Loader2, RefreshCw } from 'lucide-react'
 import { useStore } from '../store'
+import DiffViewer from './DiffViewer'
 
 interface InlineEditProps {
 	// 编辑器位置信息
@@ -48,6 +49,7 @@ export default function InlineEdit({
 		
 		setState('loading')
 		setError('')
+		setGeneratedCode('')
 		
 		try {
 			// 构建提示词
@@ -76,6 +78,11 @@ export default function InlineEdit({
 			onClose()
 		}
 	}, [generatedCode, onApply, onClose])
+	
+	const handleRetry = useCallback(() => {
+	    setState('idle')
+	    setTimeout(() => inputRef.current?.focus(), 100)
+	}, [])
 
 	const handleKeyDown = (e: React.KeyboardEvent) => {
 		if (e.key === 'Enter' && !e.shiftKey) {
@@ -92,21 +99,22 @@ export default function InlineEdit({
 
 	return (
 		<div
-			className="fixed z-50 bg-surface border border-border-subtle rounded-lg shadow-xl overflow-hidden animate-scale-in"
+			className="fixed z-50 bg-surface border border-border-subtle rounded-lg shadow-2xl overflow-hidden animate-scale-in flex flex-col"
 			style={{
 				left: position.x,
 				top: position.y,
-				minWidth: 400,
-				maxWidth: 600,
+				minWidth: 500,
+				maxWidth: 800,
+                maxHeight: '80vh'
 			}}
 		>
 			{/* Header */}
-			<div className="flex items-center justify-between px-3 py-2 bg-surface-hover border-b border-border-subtle">
+			<div className="flex items-center justify-between px-3 py-2 bg-surface-hover border-b border-border-subtle shrink-0">
 				<div className="flex items-center gap-2">
 					<Sparkles className="w-4 h-4 text-accent" />
-					<span className="text-xs font-medium text-text-primary">Edit Code</span>
+					<span className="text-xs font-medium text-text-primary">Inline AI Edit</span>
 					<span className="text-[10px] text-text-muted">
-						Lines {lineRange[0]}-{lineRange[1]}
+						{filePath.split('/').pop()}:{lineRange[0]}-{lineRange[1]}
 					</span>
 				</div>
 				<button
@@ -118,63 +126,88 @@ export default function InlineEdit({
 			</div>
 
 			{/* Input */}
-			<div className="p-3">
+			<div className="p-3 bg-background shrink-0">
 				<input
 					ref={inputRef}
 					type="text"
 					value={instruction}
 					onChange={(e) => setInstruction(e.target.value)}
 					onKeyDown={handleKeyDown}
-					placeholder="Describe the change you want to make..."
+					placeholder="Describe changes (e.g. 'Fix typo', 'Add error handling')..."
 					disabled={state === 'loading'}
-					className="w-full bg-background border border-border-subtle rounded-lg px-3 py-2 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors"
+					className="w-full bg-surface border border-border-subtle rounded-lg px-3 py-2.5 text-sm text-text-primary placeholder-text-muted focus:outline-none focus:border-accent transition-colors shadow-sm"
 				/>
 			</div>
 
-			{/* Preview */}
+			{/* Preview (Diff) */}
 			{state === 'preview' && generatedCode && (
-				<div className="px-3 pb-3">
-					<div className="text-[10px] uppercase tracking-wider text-text-muted mb-1">Preview</div>
-					<div className="bg-background rounded-lg border border-border-subtle p-2 max-h-48 overflow-auto">
-						<pre className="text-xs font-mono text-text-secondary whitespace-pre-wrap">
-							{generatedCode}
-						</pre>
+				<div className="flex-1 overflow-hidden flex flex-col bg-background/50 border-t border-border-subtle">
+					<div className="px-3 py-1.5 flex justify-between items-center bg-surface/50 border-b border-border-subtle">
+                        <span className="text-[10px] uppercase tracking-wider text-text-muted font-medium">Diff Preview</span>
+                        <div className="flex gap-2">
+                            <span className="flex items-center gap-1 text-[10px] text-red-400"><span className="w-2 h-2 rounded-full bg-red-400/20 flex items-center justify-center">-</span> Original</span>
+                            <span className="flex items-center gap-1 text-[10px] text-green-400"><span className="w-2 h-2 rounded-full bg-green-400/20 flex items-center justify-center">+</span> Modified</span>
+                        </div>
+                    </div>
+					<div className="flex-1 overflow-auto p-0 min-h-[150px]">
+						<DiffViewer
+                            originalContent={selectedCode}
+                            modifiedContent={generatedCode}
+                            filePath={filePath}
+                            onAccept={handleApply}
+                            onReject={handleRetry}
+                            minimal={true}
+                        />
 					</div>
 				</div>
 			)}
 
 			{/* Error */}
 			{state === 'error' && error && (
-				<div className="px-3 pb-3">
-					<div className="p-2 bg-status-error/10 border border-status-error/20 rounded-lg">
-						<p className="text-xs text-status-error">{error}</p>
+				<div className="px-3 pb-3 shrink-0">
+					<div className="p-2 bg-status-error/10 border border-status-error/20 rounded-lg flex items-center gap-2">
+                        <X className="w-4 h-4 text-status-error" />
+						<p className="text-xs text-status-error flex-1">{error}</p>
+                        <button onClick={handleRetry} className="text-xs underline text-status-error hover:text-red-400">Retry</button>
 					</div>
 				</div>
 			)}
 
 			{/* Actions */}
-			<div className="flex items-center justify-between px-3 py-2 bg-surface-hover border-t border-border-subtle">
+			<div className="flex items-center justify-between px-3 py-2 bg-surface-hover border-t border-border-subtle shrink-0">
 				<span className="text-[10px] text-text-muted">
-					{state === 'preview' ? '↵ to apply' : '↵ to generate'}
+					{state === 'preview' ? 'Press ↵ to apply, Esc to cancel' : 'Press ↵ to generate'}
 				</span>
 				<div className="flex items-center gap-2">
 					{state === 'loading' && (
-						<Loader2 className="w-4 h-4 text-accent animate-spin" />
+						<div className="flex items-center gap-2 text-xs text-text-muted">
+                            <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
+                            Generating...
+                        </div>
 					)}
 					{state === 'preview' && (
-						<button
-							onClick={handleApply}
-							className="flex items-center gap-1 px-3 py-1 rounded bg-accent text-white text-xs hover:bg-accent-hover transition-colors"
-						>
-							<Check className="w-3 h-3" />
-							Apply
-						</button>
+                        <>
+                            <button
+                                onClick={handleRetry}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded bg-surface border border-border-subtle text-text-secondary text-xs hover:bg-surface-hover transition-colors"
+                            >
+                                <RefreshCw className="w-3 h-3" />
+                                Retry
+                            </button>
+                            <button
+                                onClick={handleApply}
+                                className="flex items-center gap-1 px-3 py-1.5 rounded bg-accent text-white text-xs hover:bg-accent-hover transition-colors shadow-glow"
+                            >
+                                <Check className="w-3 h-3" />
+                                Apply
+                            </button>
+                        </>
 					)}
 					{(state === 'idle' || state === 'error') && (
 						<button
 							onClick={handleSubmit}
 							disabled={!instruction.trim()}
-							className="flex items-center gap-1 px-3 py-1 rounded bg-accent text-white text-xs hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+							className="flex items-center gap-1 px-3 py-1.5 rounded bg-accent text-white text-xs hover:bg-accent-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed shadow-glow"
 						>
 							<Sparkles className="w-3 h-3" />
 							Generate
@@ -203,9 +236,9 @@ File: ${filePath}
 Lines: ${lineRange[0]}-${lineRange[1]}
 
 Current code:
-\`\`\`${lang}
+\`\`${lang}
 ${code}
-\`\`\`
+\`\`
 
 User instruction: ${instruction}
 

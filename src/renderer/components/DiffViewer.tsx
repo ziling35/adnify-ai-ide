@@ -7,7 +7,7 @@
  */
 
 import { useState, useMemo, useCallback, useRef, useEffect, memo } from 'react'
-import { X, Check, ChevronDown, ChevronUp, Copy, FileEdit, Columns, AlignJustify, RotateCcw } from 'lucide-react'
+import { X, Check, ChevronDown, ChevronUp, Copy, FileEdit, Columns, AlignJustify } from 'lucide-react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 
@@ -32,6 +32,7 @@ interface DiffViewerProps {
   onReject: () => void
   onClose?: () => void
   isStreaming?: boolean // 流式编辑模式
+  minimal?: boolean // 极简模式（用于 Inline Edit）
 }
 
 // ===== 常量 =====
@@ -301,6 +302,7 @@ export default function DiffViewer({
   onReject,
   onClose,
   isStreaming = false,
+  minimal = false,
 }: DiffViewerProps) {
   const { language } = useStore()
   const [collapsed, setCollapsed] = useState(false)
@@ -461,6 +463,15 @@ export default function DiffViewer({
     )
   }
 
+  // 极简模式下，直接返回内容区域
+  if (minimal) {
+      return (
+          <div className="bg-editor-bg border border-editor-border rounded-lg overflow-hidden">
+             {viewMode === 'unified' ? renderUnifiedView() : renderSplitView()}
+          </div>
+      )
+  }
+
   return (
     <div className="bg-editor-sidebar border border-editor-border rounded-xl overflow-hidden shadow-xl">
       {/* Header */}
@@ -481,18 +492,14 @@ export default function DiffViewer({
           <div className="flex items-center bg-editor-hover rounded-lg p-0.5">
             <button
               onClick={() => setViewMode('unified')}
-              className={`p-1.5 rounded transition-colors ${
-                viewMode === 'unified' ? 'bg-editor-accent text-white' : 'text-editor-text-muted hover:text-editor-text'
-              }`}
+              className={`p-1.5 rounded transition-colors ${ viewMode === 'unified' ? 'bg-editor-accent text-white' : 'text-editor-text-muted hover:text-editor-text'}`}
               title="Unified View"
             >
               <AlignJustify className="w-4 h-4" />
             </button>
             <button
               onClick={() => setViewMode('split')}
-              className={`p-1.5 rounded transition-colors ${
-                viewMode === 'split' ? 'bg-editor-accent text-white' : 'text-editor-text-muted hover:text-editor-text'
-              }`}
+              className={`p-1.5 rounded transition-colors ${ viewMode === 'split' ? 'bg-editor-accent text-white' : 'text-editor-text-muted hover:text-editor-text'}`}
               title="Split View"
             >
               <Columns className="w-4 h-4" />

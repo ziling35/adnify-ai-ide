@@ -95,6 +95,7 @@ export interface ElectronAPI {
 	openFolder: () => Promise<string | null>
 	restoreWorkspace: () => Promise<string | null>
 	readDir: (path: string) => Promise<{ name: string; path: string; isDirectory: boolean }[]>
+    getFileTree: (path: string, maxDepth?: number) => Promise<string>
 	readFile: (path: string) => Promise<string | null>
 	writeFile: (path: string, content: string) => Promise<boolean>
 	saveFile: (content: string, path?: string) => Promise<string | null>
@@ -107,6 +108,8 @@ export interface ElectronAPI {
 	// Settings
 	getSetting: (key: string) => Promise<unknown>
 	setSetting: (key: string, value: unknown) => Promise<boolean>
+    getDataPath: () => Promise<string>
+    setDataPath: (path: string) => Promise<boolean>
 
 	// LLM
 	sendMessage: (params: LLMSendMessageParams) => Promise<void>
@@ -117,11 +120,12 @@ export interface ElectronAPI {
 	onLLMDone: (callback: (data: LLMResult) => void) => () => void
 
 	// Terminal
-	createTerminal: (options?: { cwd?: string }) => Promise<void>
-	writeTerminal: (data: string) => Promise<void>
-	resizeTerminal: (cols: number, rows: number) => Promise<void>
-	killTerminal: () => void
-	onTerminalData: (callback: (data: string) => void) => () => void
+	createTerminal: (options: { id: string; cwd?: string; shell?: string }) => Promise<boolean>
+	writeTerminal: (id: string, data: string) => Promise<void>
+	resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>
+	killTerminal: (id?: string) => void
+	getAvailableShells: () => Promise<{ label: string; path: string }[]>
+	onTerminalData: (callback: (event: { id: string; data: string }) => void) => () => void
 }
 
 contextBridge.exposeInMainWorld('electronAPI', {
@@ -133,8 +137,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
 	// File operations
 	openFile: () => ipcRenderer.invoke('file:open'),
 	openFolder: () => ipcRenderer.invoke('file:openFolder'),
+	showOpenDialog: (options: { properties?: string[]; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => 
+		ipcRenderer.invoke('dialog:showOpen', options),
+	
+	// Git operations (原生 dugite)
+	gitExec: (args: string[], cwd: string) => ipcRenderer.invoke('git:exec', args, cwd),
     restoreWorkspace: () => ipcRenderer.invoke('workspace:restore'),
 	readDir: (path: string) => ipcRenderer.invoke('file:readDir', path),
+    getFileTree: (path: string, maxDepth?: number) => ipcRenderer.invoke('file:getTree', path, maxDepth),
 	readFile: (path: string) => ipcRenderer.invoke('file:read', path),
 	writeFile: (path: string, content: string) => ipcRenderer.invoke('file:write', path, content),
 	saveFile: (content: string, path?: string) => ipcRenderer.invoke('file:save', content, path),
@@ -147,6 +157,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 	// Settings
 	getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
 	setSetting: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
+    getDataPath: () => ipcRenderer.invoke('settings:getDataPath'),
+    setDataPath: (path: string) => ipcRenderer.invoke('settings:setDataPath', path),
 
 	// LLM
 	sendMessage: (params: LLMSendMessageParams) => ipcRenderer.invoke('llm:sendMessage', params),
@@ -177,14 +189,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
 	},
 
 	// Terminal
-    createTerminal: (options?: { cwd?: string }) => ipcRenderer.invoke('terminal:create', options),
-    writeTerminal: (data: string) => ipcRenderer.invoke('terminal:input', data),
-    resizeTerminal: (cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', cols, rows),
-	killTerminal: () => ipcRenderer.send('terminal:kill'),
+    createTerminal: (options: { id: string; cwd?: string; shell?: string }) => ipcRenderer.invoke('terminal:create', options),
+    writeTerminal: (id: string, data: string) => ipcRenderer.invoke('terminal:input', { id, data }),
+    resizeTerminal: (id: string, cols: number, rows: number) => ipcRenderer.invoke('terminal:resize', { id, cols, rows }),
+	killTerminal: (id?: string) => ipcRenderer.send('terminal:kill', id),
+	getAvailableShells: () => ipcRenderer.invoke('terminal:get-shells'),
     // Background Shell
     executeCommand: (command: string, cwd?: string) => ipcRenderer.invoke('shell:execute', command, cwd),
-	onTerminalData: (callback: (data: string) => void) => {
-		const handler = (_: IpcRendererEvent, data: string) => callback(data)
+	onTerminalData: (callback: (event: { id: string; data: string }) => void) => {
+		const handler = (_: IpcRendererEvent, event: { id: string; data: string }) => callback(event)
 		ipcRenderer.on('terminal:data', handler)
 		return () => ipcRenderer.removeListener('terminal:data', handler)
 	},

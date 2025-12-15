@@ -84,15 +84,15 @@ export function useAgent() {
 		}
 
 		// 处理 @file 引用，收集上下文
-		const { files: contextFiles, cleanedMessage } = await contextService.collectContext(
+		const { files: contextFiles, cleanedMessage, projectStructure } = await contextService.collectContext(
 			userMessage,
-			{ includeActiveFile: true, includeOpenFiles: false }
+			{ includeActiveFile: true, includeOpenFiles: false, includeProjectStructure: true }
 		)
 
 		// 构建带上下文的消息
 		let messageWithContext = cleanedMessage
-		if (contextFiles.length > 0) {
-			messageWithContext += '\n\n' + buildContextString(contextFiles)
+		if (contextFiles.length > 0 || projectStructure) {
+			messageWithContext += '\n\n' + buildContextString(contextFiles, projectStructure)
 		}
 
 		// 添加用户消息（显示原始消息，但发送带上下文的消息）
@@ -128,7 +128,7 @@ export function useAgent() {
 			const openFilePaths = state.openFiles.map(f => f.path)
 			const activeFilePath = state.activeFilePath || undefined
 
-			const systemPrompt = buildSystemPrompt(chatMode, workspacePath, {
+			const systemPrompt = await buildSystemPrompt(chatMode, workspacePath, {
 				openFiles: openFilePaths,
 				activeFile: activeFilePath,
 			})

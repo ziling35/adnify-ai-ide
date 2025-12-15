@@ -10,15 +10,31 @@ export interface LLMConfig {
 	model: string
 	apiKey: string
 	baseUrl?: string
-	// 扩展配置
 	maxTokens?: number
 	temperature?: number
 	timeout?: number
 }
 
+export interface TextContent {
+	type: 'text'
+	text: string
+}
+
+export interface ImageContent {
+	type: 'image'
+	// Base64 data (without prefix) or URL
+	source: {
+		type: 'base64' | 'url'
+		media_type: string // e.g. "image/jpeg"
+		data: string
+	}
+}
+
+export type MessageContent = string | Array<TextContent | ImageContent>
+
 export interface LLMMessage {
 	role: 'user' | 'assistant' | 'system' | 'tool'
-	content: string
+	content: MessageContent
 	toolCallId?: string
 	toolName?: string
 }

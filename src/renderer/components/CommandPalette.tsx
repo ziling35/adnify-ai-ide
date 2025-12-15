@@ -70,6 +70,8 @@ export default function CommandPalette({ onClose, onShowKeyboardShortcuts }: Com
     clearMessages,
     clearCheckpoints,
     workspacePath,
+    activeFilePath,
+    setInputPrompt,
   } = useStore()
 
   const [query, setQuery] = useState('')
@@ -87,6 +89,59 @@ export default function CommandPalette({ onClose, onShowKeyboardShortcuts }: Com
       category: 'File',
       action: () => window.electronAPI.openFolder(),
       shortcut: 'Ctrl+O',
+    },
+    // AI Commands
+    {
+        id: 'ai-explain',
+        label: 'Explain Current File',
+        description: 'Ask AI to explain the active file',
+        icon: MessageSquare,
+        category: 'AI Helper',
+        action: () => {
+            if (activeFilePath) {
+                setChatMode('chat')
+                setInputPrompt(`Explain the file ${activeFilePath} in detail.`)
+            }
+        }
+    },
+    {
+        id: 'ai-test',
+        label: 'Generate Tests',
+        description: 'Generate unit tests for current file',
+        icon: Zap,
+        category: 'AI Helper',
+        action: () => {
+            if (activeFilePath) {
+                setChatMode('chat')
+                setInputPrompt(`Generate unit tests for ${activeFilePath}. Using Vitest/Jest.`)
+            }
+        }
+    },
+    {
+        id: 'ai-refactor',
+        label: 'Refactor File',
+        description: 'Ask AI to suggest refactoring improvements',
+        icon: Zap,
+        category: 'AI Helper',
+        action: () => {
+            if (activeFilePath) {
+                setChatMode('chat')
+                setInputPrompt(`Analyze ${activeFilePath} and suggest refactoring improvements for readability and performance.`)
+            }
+        }
+    },
+    {
+        id: 'ai-fix',
+        label: 'Fix Bugs',
+        description: 'Ask AI to find and fix bugs in current file',
+        icon: Zap,
+        category: 'AI Helper',
+        action: () => {
+            if (activeFilePath) {
+                setChatMode('chat')
+                setInputPrompt(`Find potential bugs in ${activeFilePath} and provide fixes.`)
+            }
+        }
     },
     {
       id: 'save-file',

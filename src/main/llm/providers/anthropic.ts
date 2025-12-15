@@ -5,16 +5,45 @@
 
 import Anthropic from '@anthropic-ai/sdk'
 import { BaseProvider } from './base'
-import { ChatParams, ToolDefinition, ToolCall } from '../types'
+import { ChatParams, ToolDefinition, ToolCall, MessageContent } from '../types'
 
 export class AnthropicProvider extends BaseProvider {
 	private client: Anthropic
 
-	constructor(apiKey: string) {
+	constructor(apiKey: string, baseUrl?: string) {
 		super('Anthropic')
-		this.log('info', 'Initializing')
-		this.client = new Anthropic({ apiKey })
+		this.log('info', 'Initializing', { baseUrl: baseUrl || 'default' })
+		this.client = new Anthropic({
+			apiKey,
+			baseURL: baseUrl
+		})
 	}
+
+    private convertContent(content: MessageContent): string | Array<Anthropic.TextBlockParam | Anthropic.ImageBlockParam> {
+        if (typeof content === 'string') return content
+        
+        return content.map(part => {
+            if (part.type === 'text') {
+                return { type: 'text', text: part.text }
+            } else {
+                if (part.source.type === 'url') {
+                    // Anthropic doesn't support URL images directly in this SDK version usually, 
+                    // or requires fetching. For now, we assume base64 is passed or we filter it out/warn.
+                    // Ideally, the frontend should convert to base64.
+                    console.warn('Anthropic provider received URL image, which is not directly supported. Ignoring.')
+                    return { type: 'text', text: '[Image URL not supported]' }
+                }
+                return {
+                    type: 'image',
+                    source: {
+                        type: 'base64',
+                        media_type: part.source.media_type as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
+                        data: part.source.data
+                    }
+                }
+            }
+        })
+    }
 
 	private convertTools(tools?: ToolDefinition[]): Anthropic.Tool[] | undefined {
 		if (!tools?.length) return undefined
@@ -41,7 +70,7 @@ export class AnthropicProvider extends BaseProvider {
 						content: [{
 							type: 'tool_result',
 							tool_use_id: msg.toolCallId!,
-							content: msg.content,
+							content: typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content),
 						}]
 					})
 				} else if (msg.role === 'assistant' && msg.toolName) {
@@ -51,13 +80,13 @@ export class AnthropicProvider extends BaseProvider {
 							type: 'tool_use',
 							id: msg.toolCallId!,
 							name: msg.toolName,
-							input: JSON.parse(msg.content),
+							input: JSON.parse(typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)),
 						}]
 					})
 				} else if (msg.role === 'user' || msg.role === 'assistant') {
 					anthropicMessages.push({
 						role: msg.role,
-						content: msg.content,
+						content: this.convertContent(msg.content),
 					})
 				}
 			}
