@@ -325,13 +325,29 @@ class SessionService {
 		const session = await this.getSession(sessionId)
 		if (!session) return false
 
-		// 创建新线程并加载消息
 		const store = useAgentStore.getState()
-		store.createThread()
 		
-		// TODO: 实现消息加载功能
-		console.log('[SessionService] Loading session:', sessionId, 'messages:', session.messages.length)
-
+		// 创建新线程
+		const threadId = store.createThread()
+		
+		// 直接设置线程的消息（通过 zustand set）
+		useAgentStore.setState(state => {
+			const thread = state.threads[threadId]
+			if (!thread) return state
+			
+			return {
+				threads: {
+					...state.threads,
+					[threadId]: {
+						...thread,
+						messages: session.messages,
+						lastModified: Date.now(),
+					},
+				},
+			}
+		})
+		
+		console.log('[SessionService] Loaded session:', sessionId, 'messages:', session.messages.length)
 		return true
 	}
 }

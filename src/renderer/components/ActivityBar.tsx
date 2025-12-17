@@ -1,9 +1,9 @@
-import { Files, Search, GitBranch, Settings, Command } from 'lucide-react'
+import { Files, Search, GitBranch, Settings, Sparkles } from 'lucide-react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 
 export default function ActivityBar() {
-  const { activeSidePanel, setActiveSidePanel, language, setShowSettings } = useStore()
+  const { activeSidePanel, setActiveSidePanel, language, setShowSettings, setShowComposer } = useStore()
 
   const items = [
     { id: 'explorer', icon: Files, label: t('explorer', language) },
@@ -38,6 +38,13 @@ export default function ActivityBar() {
 
       {/* Bottom Actions */}
       <div className="flex flex-col gap-4 w-full px-2 mb-2">
+         <button
+            onClick={() => setShowComposer(true)}
+            className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-all"
+            title={`${t('composer', language)} (Ctrl+Shift+I)`}
+          >
+            <Sparkles className="w-5 h-5" strokeWidth={1.5} />
+          </button>
          <button
             onClick={() => setShowSettings(true)}
             className="w-8 h-8 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-all"

@@ -3,7 +3,7 @@
  * 统一的接口定义，支持多种 Provider
  */
 
-export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'custom'
+export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'groq' | 'mistral' | 'ollama' | 'custom'
 
 export interface LLMConfig {
   provider: ProviderType

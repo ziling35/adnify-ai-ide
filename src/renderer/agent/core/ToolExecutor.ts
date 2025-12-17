@@ -4,7 +4,7 @@
  */
 
 import { ToolDefinition, ToolApprovalType } from './types'
-import { toFullPath } from '@/renderer/utils/pathUtils'
+import { validatePath, isSensitivePath } from '@/renderer/utils/pathUtils'
 import { pathToLspUri, lspUriToPath } from '@/renderer/services/lspService'
 
 // ===== 工具定义 =====
@@ -406,14 +406,37 @@ export async function executeTool(
   workspacePath?: string
 ): Promise<ToolExecutionResult> {
   try {
-    const resolvePath = (p: unknown) => {
-      if (typeof p !== 'string') throw new Error('Invalid path')
-      return toFullPath(p, workspacePath ?? null)
+    /**
+     * 安全路径解析
+     * 1. 验证路径格式
+     * 2. 检查目录遍历攻击
+     * 3. 检查敏感文件访问
+     * 4. 确保路径在工作区内
+     */
+    const resolvePath = (p: unknown, allowRead = false) => {
+      if (typeof p !== 'string') throw new Error('Invalid path: not a string')
+      
+      // 使用安全验证
+      const validation = validatePath(p, workspacePath ?? null, {
+        allowSensitive: false,
+        allowOutsideWorkspace: false,
+      })
+      
+      if (!validation.valid) {
+        throw new Error(`Security: ${validation.error}`)
+      }
+      
+      // 额外检查敏感文件（即使在工作区内）
+      if (!allowRead && isSensitivePath(validation.sanitizedPath!)) {
+        throw new Error('Security: Cannot modify sensitive files')
+      }
+      
+      return validation.sanitizedPath!
     }
 
     switch (toolName) {
       case 'read_file': {
-        const path = resolvePath(args.path)
+        const path = resolvePath(args.path, true) // 读取允许访问更多文件
         const content = await window.electronAPI.readFile(path)
         if (content === null) {
           return { success: false, result: '', error: `File not found: ${path}` }

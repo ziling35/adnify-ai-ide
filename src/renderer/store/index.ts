@@ -11,7 +11,7 @@ import { UISlice, createUISlice } from './slices/uiSlice'
 // 导出类型
 export type { OpenFile } from './slices/fileSlice'
 export type { ChatMode, Message, ToolCall, ContextStats } from './slices/chatSlice'
-export type { ProviderType, LLMConfig, AutoApproveSettings } from './slices/settingsSlice'
+export type { ProviderType, LLMConfig, AutoApproveSettings, ProviderModelConfig } from './slices/settingsSlice'
 export type { SidePanel, DiffView } from './slices/uiSlice'
 
 // 组合所有 slices

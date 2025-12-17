@@ -13,7 +13,7 @@
 import { useAgentStore } from './AgentStore'
 import { executeTool, getToolDefinitions, getToolApprovalType, WRITE_TOOLS } from './ToolExecutor'
 import { buildOpenAIMessages, validateOpenAIMessages, OpenAIMessage } from './MessageConverter'
-import { MessageContent, ToolStatus, ContextItem, FileSnapshot } from './types'
+import { MessageContent, ToolStatus, ContextItem } from './types'
 import { LLMStreamChunk, LLMToolCall } from '@/renderer/types/electron'
 
 // ===== 配置常量 =====
@@ -24,7 +24,19 @@ const CONFIG = {
   maxToolResultChars: 10000,  // 工具结果最大字符数
   maxFileContentChars: 15000, // 单个文件内容最大字符数
   maxTotalContextChars: 50000, // 总上下文最大字符数
+  // 重试配置
+  maxRetries: 2,              // 最大重试次数
+  retryDelayMs: 1000,         // 重试延迟（毫秒）
+  retryBackoffMultiplier: 2,  // 重试延迟倍数
 } as const
+
+// 可重试的错误代码
+const RETRYABLE_ERROR_CODES = new Set([
+  'RATE_LIMIT',
+  'TIMEOUT',
+  'NETWORK_ERROR',
+  'SERVER_ERROR',
+])
 
 // LLM 消息类型现在从 MessageConverter 导入
 
@@ -175,8 +187,8 @@ class AgentServiceClass {
 
       console.log(`[Agent] Loop iteration ${loopCount}`)
 
-      // 调用 LLM
-      const result = await this.callLLM(config, llmMessages)
+      // 调用 LLM（带自动重试）
+      const result = await this.callLLMWithRetry(config, llmMessages)
 
       if (this.abortController?.signal.aborted) break
 
@@ -290,6 +302,51 @@ class AgentServiceClass {
     }
     
     console.log(`[Agent] Loop finished after ${loopCount} iterations`)
+  }
+
+  /**
+   * 调用 LLM API（带自动重试）
+   */
+  private async callLLMWithRetry(
+    config: { provider: string; model: string; apiKey: string; baseUrl?: string },
+    messages: OpenAIMessage[]
+  ): Promise<{ content?: string; toolCalls?: LLMToolCall[]; error?: string }> {
+    let lastError: string | undefined
+    let delay = CONFIG.retryDelayMs
+    
+    for (let attempt = 0; attempt <= CONFIG.maxRetries; attempt++) {
+      if (this.abortController?.signal.aborted) {
+        return { error: 'Aborted' }
+      }
+      
+      if (attempt > 0) {
+        console.log(`[Agent] Retry attempt ${attempt}/${CONFIG.maxRetries} after ${delay}ms`)
+        await new Promise(resolve => setTimeout(resolve, delay))
+        delay *= CONFIG.retryBackoffMultiplier
+      }
+      
+      const result = await this.callLLM(config, messages)
+      
+      // 成功或不可重试的错误
+      if (!result.error) {
+        return result
+      }
+      
+      // 检查是否可重试
+      const isRetryable = RETRYABLE_ERROR_CODES.has(result.error) || 
+        result.error.includes('timeout') ||
+        result.error.includes('rate limit') ||
+        result.error.includes('network')
+      
+      if (!isRetryable || attempt === CONFIG.maxRetries) {
+        return result
+      }
+      
+      lastError = result.error
+      console.warn(`[Agent] Retryable error: ${result.error}`)
+    }
+    
+    return { error: lastError || 'Max retries exceeded' }
   }
 
   /**

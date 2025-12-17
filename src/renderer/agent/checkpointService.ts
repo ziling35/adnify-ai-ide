@@ -1,16 +1,67 @@
 /**
  * 检查点服务 - 支持文件状态回滚
  * 参考 void 编辑器的检查点系统
+ * 
+ * 支持 localStorage 持久化，刷新后可恢复检查点
  */
 
 import { Checkpoint, FileSnapshot } from './toolTypes'
 
 const MAX_CHECKPOINTS = 50
 const MAX_SNAPSHOTS_PER_CHECKPOINT = 20
+const STORAGE_KEY = 'adnify-checkpoints'
 
 class CheckpointService {
 	private checkpoints: Checkpoint[] = []
 	private currentIdx: number = -1
+	private autoSaveEnabled: boolean = true
+
+	constructor() {
+		// 从 localStorage 恢复检查点
+		this.loadFromStorage()
+	}
+
+	/**
+	 * 从 localStorage 加载检查点
+	 */
+	private loadFromStorage(): void {
+		try {
+			const saved = localStorage.getItem(STORAGE_KEY)
+			if (saved) {
+				const parsed = JSON.parse(saved)
+				if (Array.isArray(parsed.checkpoints)) {
+					this.checkpoints = parsed.checkpoints
+					this.currentIdx = parsed.currentIdx ?? this.checkpoints.length - 1
+					console.log(`[Checkpoint] Loaded ${this.checkpoints.length} checkpoints from storage`)
+				}
+			}
+		} catch (e) {
+			console.warn('[Checkpoint] Failed to load from storage:', e)
+		}
+	}
+
+	/**
+	 * 保存检查点到 localStorage
+	 */
+	private saveToStorage(): void {
+		if (!this.autoSaveEnabled) return
+		try {
+			const data = JSON.stringify({
+				checkpoints: this.checkpoints,
+				currentIdx: this.currentIdx,
+			})
+			localStorage.setItem(STORAGE_KEY, data)
+		} catch (e) {
+			console.warn('[Checkpoint] Failed to save to storage:', e)
+		}
+	}
+
+	/**
+	 * 启用/禁用自动保存
+	 */
+	setAutoSave(enabled: boolean): void {
+		this.autoSaveEnabled = enabled
+	}
 
 	/**
 	 * 创建检查点前获取文件快照
@@ -72,6 +123,9 @@ class CheckpointService {
 			this.currentIdx = this.checkpoints.length - 1
 		}
 
+		// 自动保存到 localStorage
+		this.saveToStorage()
+
 		return checkpoint
 	}
 
@@ -108,11 +162,21 @@ class CheckpointService {
 
 		for (const [path, snapshot] of Object.entries(checkpoint.snapshots)) {
 			try {
-				const success = await window.electronAPI.writeFile(path, snapshot.content)
-				if (success) {
-					restoredFiles.push(path)
+				if (snapshot.content === null) {
+					// 文件原本不存在，删除它
+					const deleted = await window.electronAPI.deleteFile(path)
+					if (deleted) {
+						restoredFiles.push(path)
+					} else {
+						errors.push(`Failed to delete: ${path}`)
+					}
 				} else {
-					errors.push(`Failed to restore: ${path}`)
+					const success = await window.electronAPI.writeFile(path, snapshot.content)
+					if (success) {
+						restoredFiles.push(path)
+					} else {
+						errors.push(`Failed to restore: ${path}`)
+					}
 				}
 			} catch (e: unknown) {
 				const err = e as { message?: string }
@@ -121,6 +185,9 @@ class CheckpointService {
 		}
 
 		this.currentIdx = idx
+
+		// 保存状态
+		this.saveToStorage()
 
 		return {
 			success: errors.length === 0,
@@ -209,6 +276,7 @@ class CheckpointService {
 	clear(): void {
 		this.checkpoints = []
 		this.currentIdx = -1
+		this.saveToStorage()
 	}
 
 	/**

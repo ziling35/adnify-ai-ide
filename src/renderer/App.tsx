@@ -14,6 +14,7 @@ import StatusBar from './components/StatusBar'
 import ComposerPanel from './components/ComposerPanel'
 import OnboardingWizard from './components/OnboardingWizard'
 import { ToastProvider, useToast, setGlobalToast } from './components/Toast'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { initEditorConfig } from './config/editorConfig'
 import { themeManager } from './config/themeConfig'
 import { restoreWorkspaceState, initWorkspaceStateSync } from './services/workspaceStateService'
@@ -35,12 +36,11 @@ function AppContent() {
   const { 
     showSettings, setLLMConfig, setLanguage, setAutoApprove, setPromptTemplateId, setShowSettings, 
     setTerminalVisible, terminalVisible, setWorkspacePath, setFiles,
-    activeSidePanel
+    activeSidePanel, showComposer, setShowComposer
   } = useStore()
   const [showCommandPalette, setShowCommandPalette] = useState(false)
   const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false)
   const [showQuickOpen, setShowQuickOpen] = useState(false)
-  const [showComposer, setShowComposer] = useState(false)
   
   // 引导状态
   const [showOnboarding, setShowOnboarding] = useState(false)
@@ -262,9 +262,13 @@ function AppContent() {
           {/* Editor Column */}
           <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
              <div className="flex-1 flex flex-col relative">
-                <Editor />
+                <ErrorBoundary>
+                  <Editor />
+                </ErrorBoundary>
              </div>
-             <TerminalPanel />
+             <ErrorBoundary>
+               <TerminalPanel />
+             </ErrorBoundary>
           </div>
 
           {/* Chat Panel Container */}
@@ -274,7 +278,9 @@ function AppContent() {
                   className="absolute top-0 left-0 w-1 h-full cursor-col-resize hover:bg-accent/50 transition-colors z-50 -translate-x-[2px]"
                   onMouseDown={(e) => { e.preventDefault(); setIsResizingChat(true) }}
               />
-              <ChatPanel />
+              <ErrorBoundary>
+                <ChatPanel />
+              </ErrorBoundary>
           </div>
 
         </div>

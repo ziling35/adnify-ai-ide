@@ -3,6 +3,137 @@
  * 统一处理跨平台路径操作
  */
 
+// ============ 安全相关常量 ============
+
+/** 敏感文件/目录模式 - 禁止 Agent 访问 */
+const SENSITIVE_PATTERNS = [
+  // 系统文件
+  /^\/etc\//i,
+  /^\/var\//i,
+  /^\/usr\//i,
+  /^\/bin\//i,
+  /^\/sbin\//i,
+  /^C:\\Windows/i,
+  /^C:\\Program Files/i,
+  /^C:\\ProgramData/i,
+  // 用户敏感目录
+  /\.ssh\//i,
+  /\.gnupg\//i,
+  /\.aws\//i,
+  /\.azure\//i,
+  /\.kube\//i,
+  /\.docker\//i,
+  // 敏感文件
+  /\.env\.local$/i,
+  /\.env\.production$/i,
+  /secrets?\.(json|ya?ml|toml)$/i,
+  /credentials?\.(json|ya?ml|toml)$/i,
+  /private[_-]?key/i,
+  /id_rsa/i,
+  /id_ed25519/i,
+  /\.pem$/i,
+  /\.key$/i,
+  /\.p12$/i,
+  /\.pfx$/i,
+]
+
+/** 危险路径模式 - 可能导致目录遍历 */
+const DANGEROUS_PATTERNS = [
+  /\.\.\//,           // ../
+  /\.\.\\/,           // ..\
+  /^~\//,             // ~/（除非明确允许）
+  /\0/,               // null byte
+  /%2e%2e/i,          // URL encoded ..
+  /%252e%252e/i,      // Double URL encoded ..
+]
+
+// ============ 安全验证函数 ============
+
+/**
+ * 检查路径是否包含目录遍历攻击
+ */
+export function hasPathTraversal(path: string): boolean {
+  return DANGEROUS_PATTERNS.some(pattern => pattern.test(path))
+}
+
+/**
+ * 检查路径是否为敏感文件/目录
+ */
+export function isSensitivePath(path: string): boolean {
+  const normalized = normalizePath(path)
+  return SENSITIVE_PATTERNS.some(pattern => pattern.test(normalized))
+}
+
+/**
+ * 验证路径是否在工作区内（防止目录遍历）
+ */
+export function isPathInWorkspace(path: string, workspacePath: string): boolean {
+  if (!workspacePath) return false
+  
+  // 规范化路径
+  const normalizedPath = normalizePath(path)
+  const normalizedWorkspace = normalizePath(workspacePath)
+  
+  // 解析相对路径
+  const resolvedPath = normalizedPath.startsWith(normalizedWorkspace)
+    ? normalizedPath
+    : normalizePath(toFullPath(path, workspacePath))
+  
+  // 检查解析后的路径是否仍在工作区内
+  return resolvedPath.startsWith(normalizedWorkspace)
+}
+
+/**
+ * 安全路径验证结果
+ */
+export interface PathValidationResult {
+  valid: boolean
+  error?: string
+  sanitizedPath?: string
+}
+
+/**
+ * 完整的路径安全验证
+ */
+export function validatePath(
+  path: string,
+  workspacePath: string | null,
+  options?: {
+    allowSensitive?: boolean
+    allowOutsideWorkspace?: boolean
+  }
+): PathValidationResult {
+  const { allowSensitive = false, allowOutsideWorkspace = false } = options || {}
+  
+  // 1. 检查空路径
+  if (!path || typeof path !== 'string') {
+    return { valid: false, error: 'Invalid path: empty or not a string' }
+  }
+  
+  // 2. 检查目录遍历
+  if (hasPathTraversal(path)) {
+    return { valid: false, error: 'Path traversal detected' }
+  }
+  
+  // 3. 检查敏感路径
+  if (!allowSensitive && isSensitivePath(path)) {
+    return { valid: false, error: 'Access to sensitive path denied' }
+  }
+  
+  // 4. 检查工作区边界
+  if (!allowOutsideWorkspace && workspacePath) {
+    if (!isPathInWorkspace(path, workspacePath)) {
+      return { valid: false, error: 'Path is outside workspace' }
+    }
+  }
+  
+  // 5. 返回清理后的路径
+  const sanitizedPath = toFullPath(path, workspacePath)
+  return { valid: true, sanitizedPath }
+}
+
+// ============ 基础路径函数 ============
+
 /**
  * 检测路径分隔符
  */

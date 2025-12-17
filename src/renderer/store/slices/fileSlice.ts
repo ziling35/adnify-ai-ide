@@ -9,11 +9,24 @@ export interface FileItem {
   isDirectory: boolean
 }
 
+/** 大文件信息 */
+export interface LargeFileInfo {
+  isLarge: boolean
+  isVeryLarge: boolean
+  size: number
+  lineCount: number
+  warning?: string
+}
+
 export interface OpenFile {
   path: string
   content: string
   isDirty: boolean
   originalContent?: string
+  /** 大文件信息（如果是大文件） */
+  largeFileInfo?: LargeFileInfo
+  /** 文件编码 */
+  encoding?: string
 }
 
 export interface FileSlice {
@@ -26,7 +39,10 @@ export interface FileSlice {
   setWorkspacePath: (path: string | null) => void
   setFiles: (files: FileItem[]) => void
   toggleFolder: (path: string) => void
-  openFile: (path: string, content: string, originalContent?: string) => void
+  openFile: (path: string, content: string, originalContent?: string, options?: {
+    largeFileInfo?: LargeFileInfo
+    encoding?: string
+  }) => void
   closeFile: (path: string) => void
   setActiveFile: (path: string | null) => void
   updateFileContent: (path: string, content: string) => void
@@ -53,17 +69,30 @@ export const createFileSlice: StateCreator<FileSlice, [], [], FileSlice> = (set)
       return { expandedFolders: newExpanded }
     }),
 
-  openFile: (path, content, originalContent) =>
+  openFile: (path, content, originalContent, options) =>
     set((state) => {
       const existing = state.openFiles.find((f) => f.path === path)
       if (existing) {
         const updatedFiles = state.openFiles.map((f) =>
-          f.path === path ? { ...f, content, originalContent } : f
+          f.path === path ? { 
+            ...f, 
+            content, 
+            originalContent,
+            largeFileInfo: options?.largeFileInfo,
+            encoding: options?.encoding,
+          } : f
         )
         return { activeFilePath: path, openFiles: updatedFiles }
       }
       return {
-        openFiles: [...state.openFiles, { path, content, isDirty: false, originalContent }],
+        openFiles: [...state.openFiles, { 
+          path, 
+          content, 
+          isDirty: false, 
+          originalContent,
+          largeFileInfo: options?.largeFileInfo,
+          encoding: options?.encoding,
+        }],
         activeFilePath: path,
       }
     }),

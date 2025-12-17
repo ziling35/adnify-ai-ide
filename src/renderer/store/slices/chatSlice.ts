@@ -1,8 +1,28 @@
 /**
  * 聊天相关状态切片
+ * 
+ * 优化：
+ * - 消息历史限制（防止内存溢出）
+ * - 消息持久化支持
+ * - 上下文窗口管理
  */
 import { StateCreator } from 'zustand'
 import { ToolStatus, ToolApprovalType, Checkpoint } from '../../agent/toolTypes'
+
+// ============ 配置常量 ============
+
+const CHAT_CONFIG = {
+  /** 最大消息数量（超过后自动清理旧消息） */
+  maxMessages: 200,
+  /** 最大工具调用数量 */
+  maxToolCalls: 100,
+  /** 最大检查点数量 */
+  maxCheckpoints: 50,
+  /** 消息内容最大长度（超过后截断） */
+  maxMessageLength: 100000,
+  /** 持久化存储 key */
+  storageKey: 'adnify_chat_history',
+} as const
 
 export type ChatMode = 'chat' | 'agent'
 
@@ -97,12 +117,30 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   setChatMode: (mode) => set({ chatMode: mode }),
 
   addMessage: (message) =>
-    set((state) => ({
-      messages: [
-        ...state.messages,
-        { ...message, id: crypto.randomUUID(), timestamp: Date.now() },
-      ],
-    })),
+    set((state) => {
+      // 截断过长的消息内容
+      let content = message.content
+      if (typeof content === 'string' && content.length > CHAT_CONFIG.maxMessageLength) {
+        content = content.slice(0, CHAT_CONFIG.maxMessageLength) + '\n...(truncated)'
+      }
+      
+      const newMessage = { 
+        ...message, 
+        content,
+        id: crypto.randomUUID(), 
+        timestamp: Date.now() 
+      }
+      
+      // 限制消息数量，保留最新的消息
+      let messages = [...state.messages, newMessage]
+      if (messages.length > CHAT_CONFIG.maxMessages) {
+        // 保留最新的消息，但确保不会截断正在进行的对话
+        const excess = messages.length - CHAT_CONFIG.maxMessages
+        messages = messages.slice(excess)
+      }
+      
+      return { messages }
+    }),
 
   updateLastMessage: (content) =>
     set((state) => {

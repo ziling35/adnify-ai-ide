@@ -60,7 +60,24 @@ export default defineConfig({
 	},
 	base: './',
 	build: {
-		outDir: 'dist/renderer'
+		outDir: 'dist/renderer',
+		rollupOptions: {
+			output: {
+				// 代码分割配置 - 优化首屏加载
+				manualChunks: {
+					// Monaco Editor 单独打包（最大的依赖）
+					'monaco-editor': ['monaco-editor'],
+					// React 相关
+					'react-vendor': ['react', 'react-dom'],
+					// 状态管理
+					'state': ['zustand'],
+					// UI 图标
+					'icons': ['lucide-react'],
+				},
+			},
+		},
+		// 增加 chunk 大小警告阈值
+		chunkSizeWarningLimit: 1500,
 	},
 	optimizeDeps: {
 		include: ['monaco-editor']

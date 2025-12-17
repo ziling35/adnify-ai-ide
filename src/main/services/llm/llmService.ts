@@ -38,6 +38,35 @@ export class LLMService {
         case 'gemini':
           this.providers.set(key, new GeminiProvider(config.apiKey, config.baseUrl, config.timeout))
           break
+        // OpenAI 兼容的 providers
+        case 'deepseek':
+          this.providers.set(key, new OpenAIProvider(
+            config.apiKey, 
+            config.baseUrl || 'https://api.deepseek.com', 
+            config.timeout
+          ))
+          break
+        case 'groq':
+          this.providers.set(key, new OpenAIProvider(
+            config.apiKey, 
+            config.baseUrl || 'https://api.groq.com/openai/v1', 
+            config.timeout
+          ))
+          break
+        case 'mistral':
+          this.providers.set(key, new OpenAIProvider(
+            config.apiKey, 
+            config.baseUrl || 'https://api.mistral.ai/v1', 
+            config.timeout
+          ))
+          break
+        case 'ollama':
+          this.providers.set(key, new OpenAIProvider(
+            config.apiKey || 'ollama', // Ollama 不需要 API key
+            config.baseUrl || 'http://localhost:11434/v1', 
+            config.timeout
+          ))
+          break
         default:
           throw new LLMError(
             `Unknown provider: ${config.provider}`,
