@@ -128,8 +128,7 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
   // 编辑类
   {
     name: 'edit_file',
-    description:
-      'Edit file using search/replace blocks. Format: <<<SEARCH\\nold\\n===\\nnew\\n>>>',
+    description: 'Edit file using search/replace blocks. Format: <<<<<<< SEARCH\\nold\\n=======\\nnew\\n>>>>>>> REPLACE',
     approvalType: 'edits',
     parameters: {
       type: 'object',
@@ -351,8 +350,8 @@ export const validateParams: ValidateParams = {
 
 export function parseSearchReplaceBlocks(blocksStr: string): SearchReplaceBlock[] {
   const blocks: SearchReplaceBlock[] = []
-  // 严格格式: <<<SEARCH\n...\n===\n...\n>>>
-  const regex = /<<<SEARCH\n([\s\S]*?)\n===\n([\s\S]*?)\n>>>/g
+  // Git 风格格式: <<<<<<< SEARCH\n...\n=======\n...\n>>>>>>> REPLACE
+  const regex = /<<<<<<< SEARCH\n([\s\S]*?)\n=======\n([\s\S]*?)\n>>>>>>> REPLACE/g
   let match
 
   while ((match = regex.exec(blocksStr)) !== null) {
@@ -471,7 +470,6 @@ export async function executeTool(
   workspacePath?: string
 ): Promise<{ result: string; error?: string }> {
   try {
-    // 验证参数
     const validator = validateParams[toolName as BuiltinToolName]
     if (!validator) {
       throw new Error(`Unknown tool: ${toolName}`)
@@ -482,9 +480,11 @@ export async function executeTool(
     return { result }
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error)
+    console.error('[Tool] Failed:', toolName, message)
     return { result: '', error: message }
   }
 }
+
 
 async function executeToolInternal(
   toolName: BuiltinToolName,
@@ -635,7 +635,7 @@ async function executeToolInternal(
 
       const blocks = parseSearchReplaceBlocks(p.searchReplaceBlocks)
       if (!blocks.length) {
-        throw new Error('No valid search/replace blocks. Use: <<<SEARCH\\nold\\n===\\nnew\\n>>>')
+        throw new Error('No valid search/replace blocks. Use: <<<<<<< SEARCH\\nold\\n=======\\nnew\\n>>>>>>> REPLACE')
       }
 
       const { newContent, appliedCount, errors } = applySearchReplaceBlocks(content, blocks)

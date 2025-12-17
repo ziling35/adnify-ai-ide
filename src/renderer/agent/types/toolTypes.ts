@@ -216,7 +216,7 @@ export interface ToolDefinition {
 
 // ===== 工具调用 =====
 
-export type ToolCallStatus = 'pending' | 'running' | 'success' | 'error' | 'rejected' | 'tool_request'
+export type ToolCallStatus = 'pending' | 'running' | 'running_now' | 'success' | 'error' | 'tool_error' | 'rejected' | 'tool_request'
 
 export interface ToolCall {
   id: string

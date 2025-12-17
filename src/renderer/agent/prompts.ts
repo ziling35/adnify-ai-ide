@@ -6,10 +6,10 @@
 import { ChatMode } from '../store'
 import { rulesService } from './rulesService'
 
-// Search/Replace 块格式 (与 tools.ts 保持一致)
-export const ORIGINAL = '<<<SEARCH'
-export const DIVIDER = '==='
-export const FINAL = '>>>'
+// Search/Replace 块格式 (Git 风格，LLM 更熟悉)
+export const ORIGINAL = '<<<<<<< SEARCH'
+export const DIVIDER = '======='
+export const FINAL = '>>>>>>> REPLACE'
 
 // 限制常量（与 editorConfig.ts 保持一致）
 export const MAX_FILE_CHARS = 60000
@@ -20,11 +20,11 @@ export const MAX_CONTEXT_CHARS = 30000
 
 // Search/Replace 块模板
 const searchReplaceBlockTemplate = `\
-<<<SEARCH
+<<<<<<< SEARCH
 // ... original code goes here
-===
+=======
 // ... updated code goes here
->>>`
+>>>>>>> REPLACE`
 
 // 工具描述
 const toolDescriptions = {
@@ -64,15 +64,16 @@ Parameters:
 - path (required): File path to edit
 - search_replace_blocks (required): String containing SEARCH/REPLACE blocks
 
-Format:
+**FORMAT** (Git-style markers):
 ${searchReplaceBlockTemplate}
 
-Guidelines:
+**RULES:**
 1. SEARCH block must EXACTLY match existing code (including whitespace and indentation)
 2. Each SEARCH block must be unique in the file
-3. You can use multiple <<<SEARCH...===...>>> blocks for multiple changes
+3. You can use multiple blocks for multiple changes
 4. Keep SEARCH blocks as small as possible while being unique
-5. Include enough context lines to make the match unique`,
+5. Include enough context lines to make the match unique
+6. Each marker must be on its own line`,
 
 	write_file: `Write or overwrite entire file content. Use edit_file for partial changes.
 Parameters:

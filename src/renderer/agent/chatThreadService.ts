@@ -366,15 +366,29 @@ class ChatThreadService {
     }
   }
 
-  finalizeLastMessage(): void {
+  finalizeLastMessage(messageId?: string): void {
     const thread = this.getCurrentThread()
-    const lastIndex = thread.messages.length - 1
-    const lastMsg = thread.messages[lastIndex]
-    
-    if (lastMsg && lastMsg.role === 'assistant' && (lastMsg as AssistantMessage).isStreaming) {
-      // 创建新对象以触发 React 更新
-      thread.messages[lastIndex] = {
-        ...lastMsg,
+
+    let index = -1
+    if (messageId) {
+      // 直接通过 ID 定位
+      index = thread.messages.findIndex((m) => m.id === messageId)
+    } else {
+      // 从后往前找最后一条 assistant 消息
+      for (let i = thread.messages.length - 1; i >= 0; i--) {
+        if (thread.messages[i].role === 'assistant') {
+          index = i
+          break
+        }
+      }
+    }
+
+    if (index === -1) return
+
+    const msg = thread.messages[index]
+    if (msg.role === 'assistant' && (msg as AssistantMessage).isStreaming) {
+      thread.messages[index] = {
+        ...msg,
         isStreaming: false,
       } as AssistantMessage
       this.emitThreadChange()

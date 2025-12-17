@@ -475,18 +475,21 @@ ipcMain.handle('file:read', async (_, filePath: string) => {
         
         // 大文件使用流式读取
         if (stats.size > 5 * 1024 * 1024) { // > 5MB
-            console.log('[File] Large file, using stream:', filePath)
             return await readLargeFile(filePath, 0, 10000)
         }
         
         return await readFileWithEncoding(filePath)
-    } catch {
+    } catch (e: any) {
+        console.error('[File] read failed:', filePath, e.message)
         return null
     }
 })
 
 ipcMain.handle('file:write', async (_, filePath: string, content: string) => {
     try {
+        if (!filePath || typeof filePath !== 'string') return false
+        if (content === undefined || content === null) return false
+        
         // 确保目录存在
         const dir = path.dirname(filePath)
         try {
@@ -494,9 +497,11 @@ ipcMain.handle('file:write', async (_, filePath: string, content: string) => {
         } catch {
             await fsPromises.mkdir(dir, { recursive: true })
         }
+        
         await fsPromises.writeFile(filePath, content, 'utf-8')
         return true
-    } catch {
+    } catch (e: any) {
+        console.error('[File] write failed:', filePath, e.message)
         return false
     }
 })
@@ -542,8 +547,7 @@ ipcMain.handle('file:mkdir', async (_, dirPath: string) => {
     try {
         await fsPromises.mkdir(dirPath, { recursive: true })
         return true
-    } catch (e) {
-        console.error('[File] mkdir error:', dirPath, e)
+    } catch {
         return false
     }
 })

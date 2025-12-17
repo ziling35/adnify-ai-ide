@@ -220,14 +220,16 @@ export function ToolCallDisplay({
     : (toolCall as ToolCall).arguments
   const status: ToolMessageType | 'pending' | 'running' = isToolMessage
     ? (toolCall as ToolMessage).type
-    : (toolCall as ToolCall).status === 'running'
-    ? 'running'
+    : (toolCall as ToolCall).status === 'running' || (toolCall as ToolCall).status === 'running_now'
+    ? 'running_now'
     : (toolCall as ToolCall).status === 'success'
     ? 'success'
-    : (toolCall as ToolCall).status === 'error'
+    : (toolCall as ToolCall).status === 'error' || (toolCall as ToolCall).status === 'tool_error'
     ? 'tool_error'
     : (toolCall as ToolCall).status === 'tool_request'
     ? 'tool_request'
+    : (toolCall as ToolCall).status === 'rejected'
+    ? 'rejected'
     : 'pending'
   const content = isToolMessage
     ? (toolCall as ToolMessage).content

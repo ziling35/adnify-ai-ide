@@ -158,8 +158,8 @@ export function useChatThreads() {
     []
   )
 
-  const finalizeLastMessage = useCallback(() => {
-    chatThreadService.finalizeLastMessage()
+  const finalizeLastMessage = useCallback((messageId?: string) => {
+    chatThreadService.finalizeLastMessage(messageId)
   }, [])
 
   const deleteMessagesAfter = useCallback((messageId: string) => {

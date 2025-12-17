@@ -178,6 +178,8 @@ export function useAgent() {
             rawParams,
           })
 
+          // 重置流状态
+          setStreamRunning(undefined)
           return { shouldContinue: false, interrupted: false }
         }
 
@@ -208,6 +210,8 @@ export function useAgent() {
             [path]: { content },
           }
           addCheckpoint('tool_edit', `Before ${name}: ${path}`, snapshots)
+        } else {
+          console.log('[useAgent] Could not read file for checkpoint:', path)
         }
       }
 
@@ -629,7 +633,7 @@ export function useAgent() {
       }
 
       setStreamRunning(undefined)
-      finalizeLastMessage()
+      finalizeLastMessage(currentAssistantMsgIdRef.current || undefined)
       currentAssistantMsgIdRef.current = null
     },
     [
@@ -663,7 +667,7 @@ export function useAgent() {
     }
 
     setStreamRunning(undefined)
-    finalizeLastMessage()
+    finalizeLastMessage(currentAssistantMsgIdRef.current || undefined)
     currentAssistantMsgIdRef.current = null
   }, [setStreamRunning, finalizeLastMessage])
 
