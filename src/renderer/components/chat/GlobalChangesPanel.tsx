@@ -11,7 +11,7 @@ import {
   Loader2,
   Square,
 } from 'lucide-react'
-import { AssistantMessage } from '../../agent/types/chatTypes'
+import { AssistantMessage } from '../../agent/core/types'
 
 // ===== 类型定义 =====
 

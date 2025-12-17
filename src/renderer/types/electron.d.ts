@@ -46,7 +46,8 @@ export interface LLMError {
 export interface SearchFilesOptions {
 	isRegex: boolean
 	isCaseSensitive: boolean
-	isWholeWord: boolean
+	isWholeWord?: boolean
+	include?: string
 	exclude?: string
 }
 
@@ -190,6 +191,7 @@ export interface ElectronAPI {
 	lspDocumentHighlight: (params: { uri: string; line: number; character: number }) => Promise<LspDocumentHighlight[] | null>
 	lspFoldingRange: (params: { uri: string }) => Promise<LspFoldingRange[] | null>
 	lspInlayHint: (params: { uri: string; range: LspRange }) => Promise<LspInlayHint[] | null>
+	getLspDiagnostics: (filePath: string) => Promise<LspDiagnostic[]>
 	onLspDiagnostics: (callback: (params: { uri: string; diagnostics: LspDiagnostic[] }) => void) => () => void
 }
 

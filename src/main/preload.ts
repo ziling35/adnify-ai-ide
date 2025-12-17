@@ -9,7 +9,8 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 interface SearchFilesOptions {
 	isRegex: boolean
 	isCaseSensitive: boolean
-	isWholeWord: boolean
+	isWholeWord?: boolean
+	include?: string
 	exclude?: string
 }
 
@@ -212,6 +213,7 @@ export interface ElectronAPI {
 	lspDocumentHighlight: (params: { uri: string; line: number; character: number }) => Promise<any>
 	lspFoldingRange: (params: { uri: string }) => Promise<any>
 	lspInlayHint: (params: { uri: string; range: any }) => Promise<any>
+	getLspDiagnostics: (filePath: string) => Promise<any[]>
 	onLspDiagnostics: (callback: (params: { uri: string; diagnostics: any[] }) => void) => () => void
 }
 
@@ -360,6 +362,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
 		ipcRenderer.invoke('lsp:foldingRange', params),
 	lspInlayHint: (params: { uri: string; range: any }) => 
 		ipcRenderer.invoke('lsp:inlayHint', params),
+	getLspDiagnostics: (filePath: string) => 
+		ipcRenderer.invoke('lsp:getDiagnostics', filePath),
 	onLspDiagnostics: (callback: (params: { uri: string; diagnostics: any[] }) => void) => {
 		const handler = (_: IpcRendererEvent, params: { uri: string; diagnostics: any[] }) => callback(params)
 		ipcRenderer.on('lsp:diagnostics', handler)

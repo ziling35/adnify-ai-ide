@@ -20,7 +20,6 @@ export interface Message {
   toolResult?: string
   isStreaming?: boolean
   timestamp: number
-  // 关联的工具调用 ID 列表（用于内联显示）
   toolCallIds?: string[]
 }
 
@@ -47,7 +46,6 @@ export interface ContextStats {
 }
 
 export interface ChatSlice {
-  // State
   chatMode: ChatMode
   messages: Message[]
   isStreaming: boolean
@@ -59,7 +57,6 @@ export interface ChatSlice {
   inputPrompt: string
   contextStats: ContextStats | null
 
-  // Actions
   setChatMode: (mode: ChatMode) => void
   addMessage: (message: Omit<Message, 'id' | 'timestamp'>) => void
   updateLastMessage: (content: string) => void
@@ -86,7 +83,6 @@ export interface ChatSlice {
 }
 
 export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set) => ({
-  // Initial state
   chatMode: 'chat',
   messages: [],
   isStreaming: false,
@@ -98,18 +94,13 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
   inputPrompt: '',
   contextStats: null,
 
-  // Actions
   setChatMode: (mode) => set({ chatMode: mode }),
 
   addMessage: (message) =>
     set((state) => ({
       messages: [
         ...state.messages,
-        {
-          ...message,
-          id: crypto.randomUUID(),
-          timestamp: Date.now(),
-        },
+        { ...message, id: crypto.randomUUID(), timestamp: Date.now() },
       ],
     })),
 
@@ -155,10 +146,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
     set((state) => {
       const index = state.messages.findIndex((m) => m.id === id)
       if (index === -1) return state
-      return {
-        messages: state.messages.slice(0, index + 1),
-        currentToolCalls: [],
-      }
+      return { messages: state.messages.slice(0, index + 1), currentToolCalls: [] }
     }),
 
   setIsStreaming: (streaming) => set({ isStreaming: streaming }),
@@ -186,10 +174,7 @@ export const createChatSlice: StateCreator<ChatSlice, [], [], ChatSlice> = (set)
         const lastMsg = messages[lastIndex]
         const existingIds = lastMsg.toolCallIds || []
         if (!existingIds.includes(toolCallId)) {
-          messages[lastIndex] = {
-            ...lastMsg,
-            toolCallIds: [...existingIds, toolCallId],
-          }
+          messages[lastIndex] = { ...lastMsg, toolCallIds: [...existingIds, toolCallId] }
         }
       }
       return { messages }

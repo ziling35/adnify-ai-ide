@@ -1,17 +1,24 @@
 /**
  * Composer Panel - 多文件编辑模式
  * 类似 Cursor 的 Composer，支持同时编辑多个文件
+ * 
+ * 集成 composerService 实现：
+ * - 批量文件修改跟踪
+ * - Accept/Reject All 功能
+ * - 按目录分组显示
+ * - 统一 Diff 生成
  */
 
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import {
   Sparkles, X, FileText, Plus,
   ChevronDown, ChevronRight, Check, AlertCircle,
-  Loader2
+  Loader2, FolderOpen, CheckCheck, XCircle
 } from 'lucide-react'
 import { useStore } from '../store'
 import DiffViewer from './DiffViewer'
 import { t } from '../i18n'
+import { composerService, FileChange } from '../agent/composerService'
 
 interface FileEdit {
   path: string
@@ -22,9 +29,11 @@ interface FileEdit {
 
 interface ComposerPanelProps {
   onClose: () => void
+  // 可选：从 Agent 传入的已有变更
+  initialChanges?: FileChange[]
 }
 
-export default function ComposerPanel({ onClose }: ComposerPanelProps) {
+export default function ComposerPanel({ onClose, initialChanges }: ComposerPanelProps) {
   const { openFiles, activeFilePath, llmConfig, updateFileContent, language } = useStore()
   
   const [instruction, setInstruction] = useState('')
@@ -34,7 +43,36 @@ export default function ComposerPanel({ onClose }: ComposerPanelProps) {
   const [error, setError] = useState<string | null>(null)
   const [showFileSelector, setShowFileSelector] = useState(false)
   const [expandedEdits, setExpandedEdits] = useState<Set<string>>(new Set())
+  const [expandedDirs, setExpandedDirs] = useState<Set<string>>(new Set())
+  const viewMode = 'grouped' as const  // 固定使用分组视图
   const inputRef = useRef<HTMLTextAreaElement>(null)
+  
+  // 订阅 composerService 状态
+  const [composerState, setComposerState] = useState(composerService.getState())
+  
+  useEffect(() => {
+    const unsubscribe = composerService.subscribe(setComposerState)
+    return unsubscribe
+  }, [])
+  
+  // 如果有初始变更，启动 session
+  useEffect(() => {
+    if (initialChanges && initialChanges.length > 0) {
+      composerService.startSession('Agent Changes', 'Changes from AI Agent')
+      initialChanges.forEach(change => {
+        composerService.addChange(change)
+      })
+    }
+  }, [initialChanges])
+  
+  // 按目录分组的变更
+  const groupedChanges = useMemo(() => {
+    if (!composerState.currentSession) return new Map<string, FileChange[]>()
+    return composerService.getChangesGroupedByDirectory()
+  }, [composerState])
+  
+  // 统计信息
+  const summary = useMemo(() => composerService.getSummary(), [composerState])
 
   // 自动添加当前活动文件
   useEffect(() => {
@@ -82,7 +120,7 @@ export default function ComposerPanel({ onClose }: ComposerPanelProps) {
       // 收集选中文件的内容
       const fileContents: { path: string; content: string }[] = []
       for (const filePath of selectedFiles) {
-        const openFile = openFiles.find(f => f.path === filePath)
+        const openFile = openFiles.find((f: { path: string; content: string }) => f.path === filePath)
         if (openFile) {
           fileContents.push({ path: filePath, content: openFile.content })
         } else {
@@ -145,6 +183,44 @@ export default function ComposerPanel({ onClose }: ComposerPanelProps) {
       }
     }
   }, [fileEdits, applyEdit])
+  
+  // Composer Service 方法
+  const handleAcceptComposerChange = useCallback(async (filePath: string) => {
+    const success = await composerService.acceptChange(filePath)
+    if (success) {
+      // 更新 store 中的文件内容
+      const change = composerState.currentSession?.changes.find(c => c.filePath === filePath)
+      if (change?.newContent) {
+        updateFileContent(filePath, change.newContent)
+      }
+    }
+  }, [composerState, updateFileContent])
+  
+  const handleRejectComposerChange = useCallback(async (filePath: string) => {
+    await composerService.rejectChange(filePath)
+  }, [])
+  
+  const handleAcceptAllComposer = useCallback(async () => {
+    const result = await composerService.acceptAll()
+    console.log(`[Composer] Accepted ${result.accepted} changes, ${result.failed} failed`)
+  }, [])
+  
+  const handleRejectAllComposer = useCallback(async () => {
+    const result = await composerService.rejectAll()
+    console.log(`[Composer] Rejected ${result.rejected} changes`)
+  }, [])
+  
+  const toggleDirExpanded = useCallback((dir: string) => {
+    setExpandedDirs(prev => {
+      const next = new Set(prev)
+      if (next.has(dir)) {
+        next.delete(dir)
+      } else {
+        next.add(dir)
+      }
+      return next
+    })
+  }, [])
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in">
@@ -180,7 +256,7 @@ export default function ComposerPanel({ onClose }: ComposerPanelProps) {
           {/* File Selector Dropdown */}
           {showFileSelector && (
             <div className="absolute mt-1 w-64 max-h-48 overflow-y-auto bg-surface border border-border-subtle rounded-lg shadow-xl z-10">
-              {openFiles.map(file => (
+              {openFiles.map((file: { path: string; content: string }) => (
                 <button
                   key={file.path}
                   onClick={() => addFile(file.path)}
@@ -271,7 +347,7 @@ export default function ComposerPanel({ onClose }: ComposerPanelProps) {
           </div>
         </div>
 
-        {/* File Edits Preview */}
+        {/* File Edits Preview - Generated Edits */}
         {fileEdits.length > 0 && (
           <div className="flex-1 overflow-y-auto">
             <div className="px-4 py-2 flex items-center justify-between bg-surface-hover border-b border-border-subtle sticky top-0">
@@ -344,6 +420,162 @@ export default function ComposerPanel({ onClose }: ComposerPanelProps) {
                 )}
               </div>
             ))}
+          </div>
+        )}
+        
+        {/* Composer Service Changes - Agent Changes */}
+        {composerState.currentSession && composerState.currentSession.changes.length > 0 && fileEdits.length === 0 && (
+          <div className="flex-1 overflow-y-auto">
+            {/* Header with stats */}
+            <div className="px-4 py-2 flex items-center justify-between bg-surface-hover border-b border-border-subtle sticky top-0 z-10">
+              <div className="flex items-center gap-3">
+                <span className="text-xs text-text-muted">
+                  {summary.total} {language === 'zh' ? '个文件' : 'files'}
+                </span>
+                <span className="text-xs text-green-400">+{composerState.currentSession.totalLinesAdded}</span>
+                <span className="text-xs text-red-400">-{composerState.currentSession.totalLinesRemoved}</span>
+                {summary.pending > 0 && (
+                  <span className="px-1.5 py-0.5 bg-yellow-500/10 text-yellow-400 text-[10px] rounded">
+                    {summary.pending} pending
+                  </span>
+                )}
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={handleRejectAllComposer}
+                  disabled={summary.pending === 0}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-surface border border-border-subtle text-text-muted text-xs rounded-lg hover:bg-red-500/10 hover:text-red-400 hover:border-red-500/30 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <XCircle className="w-3 h-3" />
+                  {language === 'zh' ? '全部拒绝' : 'Reject All'}
+                </button>
+                <button
+                  onClick={handleAcceptAllComposer}
+                  disabled={summary.pending === 0}
+                  className="flex items-center gap-1 px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                >
+                  <CheckCheck className="w-3 h-3" />
+                  {language === 'zh' ? '全部接受' : 'Accept All'}
+                </button>
+              </div>
+            </div>
+            
+            {/* Grouped by directory */}
+            {viewMode === 'grouped' ? (
+              Array.from(groupedChanges.entries()).map(([dir, changes]) => (
+                <div key={dir} className="border-b border-border-subtle">
+                  {/* Directory Header */}
+                  <div
+                    className="flex items-center gap-2 px-4 py-2 bg-background/50 hover:bg-surface-hover cursor-pointer"
+                    onClick={() => toggleDirExpanded(dir)}
+                  >
+                    {expandedDirs.has(dir) ? (
+                      <ChevronDown className="w-4 h-4 text-text-muted" />
+                    ) : (
+                      <ChevronRight className="w-4 h-4 text-text-muted" />
+                    )}
+                    <FolderOpen className="w-4 h-4 text-yellow-500" />
+                    <span className="text-sm text-text-secondary">{dir}</span>
+                    <span className="text-xs text-text-muted">({changes.length})</span>
+                  </div>
+                  
+                  {/* Files in directory */}
+                  {expandedDirs.has(dir) && changes.map(change => (
+                    <div key={change.filePath} className="border-t border-border-subtle/50">
+                      <div
+                        className="flex items-center justify-between px-4 py-2 pl-10 bg-background hover:bg-surface-hover cursor-pointer"
+                        onClick={() => toggleEditExpanded(change.filePath)}
+                      >
+                        <div className="flex items-center gap-2">
+                          {expandedEdits.has(change.filePath) ? (
+                            <ChevronDown className="w-3 h-3 text-text-muted" />
+                          ) : (
+                            <ChevronRight className="w-3 h-3 text-text-muted" />
+                          )}
+                          <FileText className="w-4 h-4 text-text-muted" />
+                          <span className="text-sm">{change.filePath.split(/[\\/]/).pop()}</span>
+                          <span className={`text-[10px] px-1.5 py-0.5 rounded ${
+                            change.changeType === 'create' ? 'bg-green-500/10 text-green-400' :
+                            change.changeType === 'delete' ? 'bg-red-500/10 text-red-400' :
+                            'bg-blue-500/10 text-blue-400'
+                          }`}>
+                            {change.changeType}
+                          </span>
+                          {change.status === 'accepted' && (
+                            <span className="px-1.5 py-0.5 bg-green-500/10 text-green-400 text-[10px] rounded">✓</span>
+                          )}
+                          {change.status === 'rejected' && (
+                            <span className="px-1.5 py-0.5 bg-red-500/10 text-red-400 text-[10px] rounded">✗</span>
+                          )}
+                        </div>
+                        
+                        {change.status === 'pending' && (
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleAcceptComposerChange(change.filePath) }}
+                              className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+                            >
+                              <Check className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRejectComposerChange(change.filePath) }}
+                              className="px-2 py-1 bg-surface border border-border-subtle text-text-secondary text-xs rounded hover:bg-surface-hover transition-colors"
+                            >
+                              <X className="w-3 h-3" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Diff Preview */}
+                      {expandedEdits.has(change.filePath) && change.oldContent !== null && change.newContent !== null && (
+                        <div className="max-h-[250px] overflow-auto border-t border-border-subtle/30">
+                          <DiffViewer
+                            originalContent={change.oldContent || ''}
+                            modifiedContent={change.newContent || ''}
+                            filePath={change.filePath}
+                            minimal={true}
+                            onAccept={() => handleAcceptComposerChange(change.filePath)}
+                            onReject={() => handleRejectComposerChange(change.filePath)}
+                          />
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ))
+            ) : (
+              // Flat view
+              composerState.currentSession.changes.map(change => (
+                <div key={change.filePath} className="border-b border-border-subtle">
+                  <div
+                    className="flex items-center justify-between px-4 py-2 bg-background hover:bg-surface-hover cursor-pointer"
+                    onClick={() => toggleEditExpanded(change.filePath)}
+                  >
+                    <div className="flex items-center gap-2">
+                      <FileText className="w-4 h-4 text-text-muted" />
+                      <span className="text-sm">{change.relativePath}</span>
+                    </div>
+                    {change.status === 'pending' && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleAcceptComposerChange(change.filePath) }}
+                          className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700"
+                        >
+                          Accept
+                        </button>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleRejectComposerChange(change.filePath) }}
+                          className="px-2 py-1 bg-surface border border-border-subtle text-xs rounded hover:bg-surface-hover"
+                        >
+                          Reject
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))
+            )}
           </div>
         )}
       </div>

@@ -1,7 +1,13 @@
 /**
  * Code Completion Service
  * Provides AI-powered code completion with debounce and cancellation support
- * Enhanced with FIM (Fill-in-the-Middle) support and better context awareness
+ * Enhanced with FIM (Fill-in-the-Middle) support, caching, and multi-candidate support
+ * 
+ * Cursor-style features:
+ * - LRU cache for fast repeated completions
+ * - Multi-candidate suggestions with Tab cycling
+ * - Predictive pre-fetching
+ * - Context-aware completion ranking
  */
 
 import { useStore } from '../store'
@@ -34,11 +40,16 @@ export interface CompletionSuggestion {
   displayText: string
   range: { start: number; end: number }
   confidence: number
+  // Multi-candidate support
+  index?: number
+  total?: number
 }
 
 export interface CompletionResult {
   suggestions: CompletionSuggestion[]
   cached: boolean
+  // Multi-candidate support
+  currentIndex?: number
 }
 
 export interface CompletionOptions {
@@ -51,6 +62,11 @@ export interface CompletionOptions {
   fimEnabled: boolean  // Use FIM format for supported models
   contextLines: number  // Lines of context to include
   multilineSuggestions: boolean  // Allow multi-line completions
+  // Cursor-style options
+  cacheEnabled: boolean  // Enable completion caching
+  cacheMaxSize: number  // Max cache entries
+  cacheTTL: number  // Cache TTL in ms
+  maxCandidates: number  // Max candidates to generate
 }
 
 // FIM-capable models
@@ -77,11 +93,96 @@ function getDefaultOptions(): CompletionOptions {
     fimEnabled: true,
     contextLines: 50,
     multilineSuggestions: true,
+    // Cursor-style defaults
+    cacheEnabled: true,
+    cacheMaxSize: 100,
+    cacheTTL: 60000, // 1 minute
+    maxCandidates: 3,
   }
 }
 
 // Stop sequences for completion
 const STOP_SEQUENCES = ['\n\n', '```', '// ', '/* ', '"""', "'''"]
+
+// ============ LRU Cache ============
+
+interface CacheEntry {
+  result: CompletionResult
+  timestamp: number
+}
+
+class CompletionCache {
+  private cache = new Map<string, CacheEntry>()
+  private maxSize: number
+  private ttl: number
+
+  constructor(maxSize = 100, ttl = 60000) {
+    this.maxSize = maxSize
+    this.ttl = ttl
+  }
+
+  private generateKey(context: CompletionContext): string {
+    // Generate a cache key based on prefix (last 100 chars) and file
+    const prefixKey = context.prefix.slice(-100)
+    const suffixKey = context.suffix.slice(0, 50)
+    return `${context.filePath}:${context.cursorPosition.line}:${prefixKey}:${suffixKey}`
+  }
+
+  get(context: CompletionContext): CompletionResult | null {
+    const key = this.generateKey(context)
+    const entry = this.cache.get(key)
+    
+    if (!entry) return null
+    
+    // Check TTL
+    if (Date.now() - entry.timestamp > this.ttl) {
+      this.cache.delete(key)
+      return null
+    }
+    
+    // Move to end (LRU)
+    this.cache.delete(key)
+    this.cache.set(key, entry)
+    
+    return { ...entry.result, cached: true }
+  }
+
+  set(context: CompletionContext, result: CompletionResult): void {
+    const key = this.generateKey(context)
+    
+    // Evict oldest if at capacity
+    if (this.cache.size >= this.maxSize) {
+      const firstKey = this.cache.keys().next().value
+      if (firstKey) this.cache.delete(firstKey)
+    }
+    
+    this.cache.set(key, {
+      result,
+      timestamp: Date.now(),
+    })
+  }
+
+  clear(): void {
+    this.cache.clear()
+  }
+
+  // Prefix-based lookup for predictive matching
+  getByPrefix(context: CompletionContext, minPrefixLength = 50): CompletionResult | null {
+    const currentPrefix = context.prefix.slice(-100)
+    
+    for (const [key, entry] of this.cache) {
+      if (Date.now() - entry.timestamp > this.ttl) continue
+      
+      // Check if cached prefix is a prefix of current prefix
+      const cachedPrefix = key.split(':')[2] || ''
+      if (currentPrefix.startsWith(cachedPrefix) && cachedPrefix.length >= minPrefixLength) {
+        return { ...entry.result, cached: true }
+      }
+    }
+    
+    return null
+  }
+}
 
 // ============ Debounce Utility ============
 
@@ -175,9 +276,16 @@ class CompletionService {
   private onErrorCallback: ErrorCallback | null = null
   private recentEditedFiles: Array<{ path: string; timestamp: number }> = []
   private maxRecentFiles = 5
+  
+  // Cursor-style enhancements
+  private cache: CompletionCache
+  private currentCandidates: CompletionSuggestion[] = []
+  private currentCandidateIndex = 0
+  private lastContext: CompletionContext | null = null
 
   constructor() {
     this.options = getDefaultOptions()
+    this.cache = new CompletionCache(this.options.cacheMaxSize, this.options.cacheTTL)
     this.setupDebouncedRequest()
   }
 
@@ -195,6 +303,13 @@ class CompletionService {
     this.options = { ...this.options, ...options }
     // Recreate debounced function with new delay
     this.setupDebouncedRequest()
+    // Update cache settings
+    if (options.cacheMaxSize || options.cacheTTL) {
+      this.cache = new CompletionCache(
+        this.options.cacheMaxSize,
+        this.options.cacheTTL
+      )
+    }
   }
 
   /**
@@ -218,6 +333,58 @@ class CompletionService {
     this.onErrorCallback = callback
   }
 
+  /**
+   * Cycle to next candidate (Tab cycling like Cursor)
+   */
+  nextCandidate(): CompletionSuggestion | null {
+    if (this.currentCandidates.length === 0) return null
+    
+    this.currentCandidateIndex = (this.currentCandidateIndex + 1) % this.currentCandidates.length
+    const candidate = this.currentCandidates[this.currentCandidateIndex]
+    
+    // Update index info
+    return {
+      ...candidate,
+      index: this.currentCandidateIndex,
+      total: this.currentCandidates.length,
+    }
+  }
+
+  /**
+   * Cycle to previous candidate
+   */
+  prevCandidate(): CompletionSuggestion | null {
+    if (this.currentCandidates.length === 0) return null
+    
+    this.currentCandidateIndex = (this.currentCandidateIndex - 1 + this.currentCandidates.length) % this.currentCandidates.length
+    const candidate = this.currentCandidates[this.currentCandidateIndex]
+    
+    return {
+      ...candidate,
+      index: this.currentCandidateIndex,
+      total: this.currentCandidates.length,
+    }
+  }
+
+  /**
+   * Get current candidate
+   */
+  getCurrentCandidate(): CompletionSuggestion | null {
+    if (this.currentCandidates.length === 0) return null
+    return {
+      ...this.currentCandidates[this.currentCandidateIndex],
+      index: this.currentCandidateIndex,
+      total: this.currentCandidates.length,
+    }
+  }
+
+  /**
+   * Clear current candidates
+   */
+  clearCandidates(): void {
+    this.currentCandidates = []
+    this.currentCandidateIndex = 0
+  }
 
   /**
    * Track recently edited files
@@ -232,6 +399,10 @@ class CompletionService {
     if (this.recentEditedFiles.length > this.maxRecentFiles) {
       this.recentEditedFiles = this.recentEditedFiles.slice(0, this.maxRecentFiles)
     }
+    // Clear cache for this file (content changed)
+    if (this.options.cacheEnabled) {
+      // Cache will naturally expire, but we could add file-specific invalidation
+    }
   }
 
   /**
@@ -239,6 +410,13 @@ class CompletionService {
    */
   getRecentFiles(): string[] {
     return this.recentEditedFiles.map(f => f.path)
+  }
+
+  /**
+   * Clear completion cache
+   */
+  clearCache(): void {
+    this.cache.clear()
   }
 
   /**
@@ -336,8 +514,33 @@ class CompletionService {
 
   /**
    * Execute the actual completion request
+   * Enhanced with caching and multi-candidate support
    */
   private async executeRequest(context: CompletionContext): Promise<void> {
+    // Check cache first (Cursor-style optimization)
+    if (this.options.cacheEnabled) {
+      const cached = this.cache.get(context)
+      if (cached) {
+        console.log('[Completion] Cache hit')
+        this.currentCandidates = cached.suggestions
+        this.currentCandidateIndex = 0
+        this.lastContext = context
+        this.onCompletionCallback?.(cached)
+        return
+      }
+      
+      // Try prefix-based cache lookup
+      const prefixCached = this.cache.getByPrefix(context)
+      if (prefixCached) {
+        console.log('[Completion] Prefix cache hit')
+        this.currentCandidates = prefixCached.suggestions
+        this.currentCandidateIndex = 0
+        this.lastContext = context
+        this.onCompletionCallback?.(prefixCached)
+        return
+      }
+    }
+
     // Cancel any existing request
     if (this.currentAbortController) {
       this.currentAbortController.abort()
@@ -346,6 +549,17 @@ class CompletionService {
 
     try {
       const result = await this.fetchCompletion(context, this.currentAbortController.signal)
+      
+      // Store candidates for Tab cycling
+      this.currentCandidates = result.suggestions
+      this.currentCandidateIndex = 0
+      this.lastContext = context
+      
+      // Cache the result
+      if (this.options.cacheEnabled && result.suggestions.length > 0) {
+        this.cache.set(context, result)
+      }
+      
       this.onCompletionCallback?.(result)
     } catch (error) {
       if (error instanceof Error && error.name === 'AbortError') {

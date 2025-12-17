@@ -6,11 +6,14 @@
 
 export interface LintError {
   file: string
-  line: number
-  column: number
+  line?: number
+  column?: number
   message: string
   severity: 'error' | 'warning' | 'info'
   rule?: string
+  code?: string
+  startLine?: number
+  endLine?: number
 }
 
 // ===== 流式编辑相关类型 =====
@@ -34,6 +37,7 @@ export interface PersistentTerminal {
   isRunning: boolean
   lastOutput: string
   createdAt: number
+  output: string[]
 }
 
 export interface TerminalCommandResult {
@@ -41,14 +45,17 @@ export interface TerminalCommandResult {
   output: string
   exitCode: number
   duration: number
+  terminalId?: string
+  isComplete?: boolean
 }
 
 // ===== Checkpoint 相关类型 =====
 
 export interface FileSnapshot {
-  path: string
+  path?: string
+  fsPath?: string
   content: string | null
-  timestamp: number
+  timestamp?: number
 }
 
 export interface Checkpoint {

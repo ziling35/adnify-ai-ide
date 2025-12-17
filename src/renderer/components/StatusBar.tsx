@@ -1,12 +1,29 @@
 import { useEffect, useState } from 'react'
-import { GitBranch, AlertCircle, XCircle, Database, Loader2 } from 'lucide-react'
+import { GitBranch, AlertCircle, XCircle, Database, Loader2, Cpu } from 'lucide-react'
 import { useStore } from '../store'
 import { t } from '../i18n'
 import { IndexStatus } from '../types/electron'
+import { indexWorkerService, IndexProgress } from '../services/indexWorkerService'
 
 export default function StatusBar() {
   const { activeFilePath, isStreaming, workspacePath, setShowSettings, language } = useStore()
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
+  const [workerProgress, setWorkerProgress] = useState<IndexProgress | null>(null)
+
+  // 初始化 Worker 并监听进度
+  useEffect(() => {
+    indexWorkerService.initialize()
+    
+    const unsubProgress = indexWorkerService.onProgress(setWorkerProgress)
+    const unsubError = indexWorkerService.onError((error) => {
+      console.error('[StatusBar] Worker error:', error)
+    })
+    
+    return () => {
+      unsubProgress()
+      unsubError()
+    }
+  }, [])
 
   // 监听索引状态
   useEffect(() => {
@@ -46,6 +63,16 @@ export default function StatusBar() {
                 <span>0</span>
             </div>
         </div>
+
+        {/* Worker 状态 */}
+        {workerProgress && !workerProgress.isComplete && (
+          <div className="flex items-center gap-1.5 text-accent">
+            <Cpu className="w-3 h-3 animate-pulse" />
+            <span>
+              Worker: {workerProgress.processed}/{workerProgress.total}
+            </span>
+          </div>
+        )}
 
         {/* 索引状态 */}
         {workspacePath && (

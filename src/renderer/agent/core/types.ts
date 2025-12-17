@@ -22,6 +22,7 @@ export interface ToolCall {
   status: ToolStatus
   result?: string
   error?: string
+  rawParams?: Record<string, unknown>
 }
 
 export interface ToolDefinition {

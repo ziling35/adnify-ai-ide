@@ -1,333 +1,386 @@
 /**
- * Composer 服务
- * 支持多文件上下文感知编辑
- * 类似 Cursor 的 Composer 功能
+ * Composer Service
+ * Cursor-style multi-file editing support
+ * 
+ * Features:
+ * - Batch file modifications
+ * - Unified diff view for all changes
+ * - Accept/Reject all functionality
+ * - Change grouping and ordering
  */
 
-import { useStore } from '../store'
-import { getExtension, getDirPath, getPathSeparator, joinPath } from '../utils/pathUtils'
+// ============ Types ============
 
-export interface ComposerFile {
-  path: string
-  content: string
-  language: string
-  isModified: boolean
-  originalContent?: string
-}
-
-export interface ComposerContext {
-  files: ComposerFile[]
-  instructions: string
-  relatedFiles: string[]  // 自动检测的相关文件
-}
-
-export interface ComposerEdit {
+export interface FileChange {
   filePath: string
-  originalContent: string
-  newContent: string
-  description: string
+  relativePath: string
+  oldContent: string | null  // null for new files
+  newContent: string | null  // null for deleted files
+  changeType: 'create' | 'modify' | 'delete'
+  linesAdded: number
+  linesRemoved: number
+  // Tracking
+  toolCallId?: string
+  status: 'pending' | 'accepted' | 'rejected'
 }
 
-export interface ComposerPlan {
+export interface ComposerSession {
   id: string
-  description: string
-  edits: ComposerEdit[]
-  status: 'planning' | 'ready' | 'applying' | 'completed' | 'error'
+  title: string
+  description?: string
+  changes: FileChange[]
   createdAt: number
+  status: 'active' | 'completed' | 'cancelled'
+  // Stats
+  totalFiles: number
+  totalLinesAdded: number
+  totalLinesRemoved: number
 }
 
-// 语言映射
-const LANGUAGE_MAP: Record<string, string> = {
-  ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
-  py: 'python', rs: 'rust', go: 'go', java: 'java',
-  cpp: 'cpp', c: 'c', css: 'css', scss: 'scss',
-  html: 'html', vue: 'html', svelte: 'html',
-  json: 'json', yaml: 'yaml', yml: 'yaml', md: 'markdown',
+export interface ComposerState {
+  currentSession: ComposerSession | null
+  sessions: ComposerSession[]
+  isProcessing: boolean
 }
 
-class ComposerService {
-  private currentPlan: ComposerPlan | null = null
+// ============ Composer Service ============
+
+class ComposerServiceClass {
+  private state: ComposerState = {
+    currentSession: null,
+    sessions: [],
+    isProcessing: false,
+  }
+  
+  private listeners: Set<(state: ComposerState) => void> = new Set()
 
   /**
-   * 分析文件依赖关系
+   * Subscribe to state changes
    */
-  async analyzeFileDependencies(filePath: string): Promise<string[]> {
-    const { workspacePath } = useStore.getState()
-    if (!workspacePath) return []
+  subscribe(listener: (state: ComposerState) => void): () => void {
+    this.listeners.add(listener)
+    return () => this.listeners.delete(listener)
+  }
 
-    const content = await window.electronAPI.readFile(filePath)
-    if (!content) return []
-
-    const relatedFiles: Set<string> = new Set()
-    const ext = getExtension(filePath)
-
-    // TypeScript/JavaScript imports
-    if (['ts', 'tsx', 'js', 'jsx', 'mjs'].includes(ext)) {
-      const importRegex = /(?:import|export).*?from\s+['"]([^'"]+)['"]/g
-      const requireRegex = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g
-      
-      let match
-      while ((match = importRegex.exec(content)) !== null) {
-        const importPath = match[1]
-        if (importPath.startsWith('.')) {
-          relatedFiles.add(this.resolveImportPath(filePath, importPath, workspacePath))
-        }
-      }
-      while ((match = requireRegex.exec(content)) !== null) {
-        const importPath = match[1]
-        if (importPath.startsWith('.')) {
-          relatedFiles.add(this.resolveImportPath(filePath, importPath, workspacePath))
-        }
-      }
-    }
-
-    // Python imports
-    if (ext === 'py') {
-      const fromImportRegex = /from\s+(\S+)\s+import/g
-      const importRegex = /^import\s+(\S+)/gm
-      
-      let match
-      while ((match = fromImportRegex.exec(content)) !== null) {
-        const modulePath = match[1]
-        if (modulePath.startsWith('.')) {
-          relatedFiles.add(this.resolvePythonImport(filePath, modulePath, workspacePath))
-        }
-      }
-      while ((match = importRegex.exec(content)) !== null) {
-        const modulePath = match[1]
-        if (!modulePath.includes('.')) continue
-        relatedFiles.add(this.resolvePythonImport(filePath, modulePath, workspacePath))
-      }
-    }
-
-    // 过滤掉不存在的文件
-    const existingFiles: string[] = []
-    for (const file of relatedFiles) {
-      if (file && await this.fileExists(file)) {
-        existingFiles.push(file)
-      }
-    }
-
-    return existingFiles.slice(0, 10) // 限制最多10个相关文件
+  private notify(): void {
+    this.listeners.forEach(listener => listener(this.state))
   }
 
   /**
-   * 构建 Composer 上下文
+   * Get current state
    */
-  async buildContext(
-    selectedFiles: string[],
-    instructions: string
-  ): Promise<ComposerContext> {
-    const files: ComposerFile[] = []
-    const relatedFilesSet: Set<string> = new Set()
-
-    // 加载选中的文件
-    for (const filePath of selectedFiles) {
-      const content = await window.electronAPI.readFile(filePath)
-      if (content !== null) {
-        const ext = getExtension(filePath)
-        files.push({
-          path: filePath,
-          content,
-          language: LANGUAGE_MAP[ext] || 'plaintext',
-          isModified: false,
-        })
-
-        // 分析依赖
-        const deps = await this.analyzeFileDependencies(filePath)
-        deps.forEach(d => relatedFilesSet.add(d))
-      }
-    }
-
-    // 移除已选中的文件
-    selectedFiles.forEach(f => relatedFilesSet.delete(f))
-
-    return {
-      files,
-      instructions,
-      relatedFiles: Array.from(relatedFilesSet),
-    }
+  getState(): ComposerState {
+    return { ...this.state }
   }
 
   /**
-   * 构建 Composer 专用的系统提示
+   * Start a new composer session
    */
-  buildComposerPrompt(context: ComposerContext): string {
-    let prompt = `You are an expert code editor assistant working in Composer mode.
-You are editing multiple files simultaneously with full context awareness.
-
-## Current Files Being Edited
-
-`
-    for (const file of context.files) {
-      prompt += `### ${file.path} (${file.language})
-\`\`\`${file.language}
-${file.content}
-\`\`\`
-
-`
-    }
-
-    if (context.relatedFiles.length > 0) {
-      prompt += `## Related Files (for reference)
-${context.relatedFiles.map(f => `- ${f}`).join('\n')}
-
-`
-    }
-
-    prompt += `## Instructions
-${context.instructions}
-
-## Response Format
-For each file you need to modify, respond with:
-
-### FILE: <file_path>
-\`\`\`<language>
-<complete new file content>
-\`\`\`
-
-Important:
-1. Output the COMPLETE file content, not just the changes
-2. Maintain consistent style with existing code
-3. Preserve imports and dependencies
-4. Consider how changes in one file affect others
-5. If creating a new file, specify the full path
-`
-
-    return prompt
-  }
-
-  /**
-   * 解析 Composer 响应，提取文件编辑
-   */
-  parseComposerResponse(response: string, originalFiles: ComposerFile[]): ComposerEdit[] {
-    const edits: ComposerEdit[] = []
+  startSession(title: string, description?: string): string {
+    const id = `composer_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
     
-    // 匹配 ### FILE: path 格式
-    const fileBlockRegex = /###\s*FILE:\s*([^\n]+)\n```(\w+)?\n([\s\S]*?)```/g
-    let match
-
-    while ((match = fileBlockRegex.exec(response)) !== null) {
-      const filePath = match[1].trim()
-      const newContent = match[3].trim()
-      
-      // 查找原始内容
-      const originalFile = originalFiles.find(f => 
-        f.path === filePath || f.path.endsWith(filePath) || filePath.endsWith(f.path.split(/[\\/]/).pop() || '')
-      )
-
-      edits.push({
-        filePath,
-        originalContent: originalFile?.content || '',
-        newContent,
-        description: `Edit ${filePath}`,
-      })
-    }
-
-    return edits
-  }
-
-  /**
-   * 创建编辑计划
-   */
-  createPlan(description: string, edits: ComposerEdit[]): ComposerPlan {
-    this.currentPlan = {
-      id: crypto.randomUUID(),
+    const session: ComposerSession = {
+      id,
+      title,
       description,
-      edits,
-      status: 'ready',
+      changes: [],
       createdAt: Date.now(),
+      status: 'active',
+      totalFiles: 0,
+      totalLinesAdded: 0,
+      totalLinesRemoved: 0,
     }
-    return this.currentPlan
+    
+    this.state.currentSession = session
+    this.state.sessions.unshift(session)
+    this.notify()
+    
+    return id
   }
 
   /**
-   * 应用编辑计划
+   * Add a file change to the current session
    */
-  async applyPlan(plan: ComposerPlan): Promise<{ success: boolean; errors: string[] }> {
-    const errors: string[] = []
-    plan.status = 'applying'
+  addChange(change: Omit<FileChange, 'status'>): void {
+    if (!this.state.currentSession) {
+      console.warn('[Composer] No active session')
+      return
+    }
+    
+    const fullChange: FileChange = {
+      ...change,
+      status: 'pending',
+    }
+    
+    // Check if file already has a change
+    const existingIndex = this.state.currentSession.changes.findIndex(
+      c => c.filePath === change.filePath
+    )
+    
+    if (existingIndex >= 0) {
+      // Update existing change
+      this.state.currentSession.changes[existingIndex] = fullChange
+    } else {
+      // Add new change
+      this.state.currentSession.changes.push(fullChange)
+    }
+    
+    // Update stats
+    this.updateSessionStats()
+    this.notify()
+  }
 
-    for (const edit of plan.edits) {
-      try {
-        const success = await window.electronAPI.writeFile(edit.filePath, edit.newContent)
-        if (!success) {
-          errors.push(`Failed to write: ${edit.filePath}`)
+  /**
+   * Accept a single change
+   */
+  async acceptChange(filePath: string): Promise<boolean> {
+    if (!this.state.currentSession) return false
+    
+    const change = this.state.currentSession.changes.find(c => c.filePath === filePath)
+    if (!change || change.status !== 'pending') return false
+    
+    try {
+      if (change.changeType === 'delete') {
+        await window.electronAPI.deleteFile(filePath)
+      } else if (change.newContent !== null) {
+        // Ensure parent directory exists
+        const parentDir = filePath.replace(/[/\\][^/\\]+$/, '')
+        if (parentDir && parentDir !== filePath) {
+          await window.electronAPI.mkdir(parentDir)
         }
-      } catch (e) {
-        errors.push(`Error writing ${edit.filePath}: ${(e as Error).message}`)
+        await window.electronAPI.writeFile(filePath, change.newContent)
       }
+      
+      change.status = 'accepted'
+      this.notify()
+      return true
+    } catch (error) {
+      console.error('[Composer] Failed to accept change:', error)
+      return false
     }
-
-    plan.status = errors.length === 0 ? 'completed' : 'error'
-    return { success: errors.length === 0, errors }
   }
 
   /**
-   * 获取当前计划
+   * Reject a single change
    */
-  getCurrentPlan(): ComposerPlan | null {
-    return this.currentPlan
+  async rejectChange(filePath: string): Promise<boolean> {
+    if (!this.state.currentSession) return false
+    
+    const change = this.state.currentSession.changes.find(c => c.filePath === filePath)
+    if (!change || change.status !== 'pending') return false
+    
+    // Restore original content if it was modified
+    if (change.changeType === 'modify' && change.oldContent !== null) {
+      try {
+        await window.electronAPI.writeFile(filePath, change.oldContent)
+      } catch (error) {
+        console.error('[Composer] Failed to restore file:', error)
+      }
+    }
+    
+    change.status = 'rejected'
+    this.notify()
+    return true
   }
 
   /**
-   * 清除当前计划
+   * Accept all pending changes
    */
-  clearPlan(): void {
-    this.currentPlan = null
-  }
-
-  // 辅助方法
-  private resolveImportPath(fromFile: string, importPath: string, workspacePath: string): string {
-    const sep = getPathSeparator(workspacePath)
-    const fromDir = getDirPath(fromFile)
+  async acceptAll(): Promise<{ accepted: number; failed: number }> {
+    if (!this.state.currentSession) return { accepted: 0, failed: 0 }
     
-    // 简单的路径解析
-    let resolved = importPath
-    if (importPath.startsWith('./')) {
-      resolved = joinPath(fromDir, importPath.slice(2))
-    } else if (importPath.startsWith('../')) {
-      const parts = fromDir.split(sep === '\\' ? /\\/ : /\//)
-      let upCount = 0
-      let remaining = importPath
-      while (remaining.startsWith('../')) {
-        upCount++
-        remaining = remaining.slice(3)
-      }
-      resolved = [...parts.slice(0, -upCount), remaining].join(sep)
-    }
-
-    // 尝试添加扩展名
-    const extensions = ['.ts', '.tsx', '.js', '.jsx', '/index.ts', '/index.tsx', '/index.js']
-    for (const ext of extensions) {
-      const withExt = resolved + ext
-      // 返回可能的路径，后续会验证
-      if (!resolved.includes('.')) {
-        return withExt
+    let accepted = 0
+    let failed = 0
+    
+    for (const change of this.state.currentSession.changes) {
+      if (change.status === 'pending') {
+        const success = await this.acceptChange(change.filePath)
+        if (success) {
+          accepted++
+        } else {
+          failed++
+        }
       }
     }
-
-    return resolved
+    
+    // Check if session is complete
+    this.checkSessionComplete()
+    
+    return { accepted, failed }
   }
 
-  private resolvePythonImport(fromFile: string, modulePath: string, workspacePath: string): string {
-    const sep = getPathSeparator(workspacePath)
-    const fromDir = getDirPath(fromFile)
+  /**
+   * Reject all pending changes
+   */
+  async rejectAll(): Promise<{ rejected: number; failed: number }> {
+    if (!this.state.currentSession) return { rejected: 0, failed: 0 }
     
-    // 将模块路径转换为文件路径
-    const filePath = modulePath.replace(/\./g, sep) + '.py'
+    let rejected = 0
+    let failed = 0
     
-    if (modulePath.startsWith('.')) {
-      return joinPath(fromDir, filePath.slice(1))
+    for (const change of this.state.currentSession.changes) {
+      if (change.status === 'pending') {
+        const success = await this.rejectChange(change.filePath)
+        if (success) {
+          rejected++
+        } else {
+          failed++
+        }
+      }
     }
     
-    return joinPath(workspacePath, filePath)
+    // Check if session is complete
+    this.checkSessionComplete()
+    
+    return { rejected, failed }
   }
 
-  private async fileExists(filePath: string): Promise<boolean> {
-    const content = await window.electronAPI.readFile(filePath)
-    return content !== null
+  /**
+   * Complete the current session
+   */
+  completeSession(): void {
+    if (!this.state.currentSession) return
+    
+    this.state.currentSession.status = 'completed'
+    this.state.currentSession = null
+    this.notify()
+  }
+
+  /**
+   * Cancel the current session (reject all and close)
+   */
+  async cancelSession(): Promise<void> {
+    if (!this.state.currentSession) return
+    
+    await this.rejectAll()
+    this.state.currentSession.status = 'cancelled'
+    this.state.currentSession = null
+    this.notify()
+  }
+
+  /**
+   * Get changes grouped by directory
+   */
+  getChangesGroupedByDirectory(): Map<string, FileChange[]> {
+    if (!this.state.currentSession) return new Map()
+    
+    const groups = new Map<string, FileChange[]>()
+    
+    for (const change of this.state.currentSession.changes) {
+      const dir = change.relativePath.replace(/[/\\][^/\\]+$/, '') || '.'
+      
+      if (!groups.has(dir)) {
+        groups.set(dir, [])
+      }
+      groups.get(dir)!.push(change)
+    }
+    
+    return groups
+  }
+
+  /**
+   * Get summary of changes
+   */
+  getSummary(): {
+    pending: number
+    accepted: number
+    rejected: number
+    total: number
+  } {
+    if (!this.state.currentSession) {
+      return { pending: 0, accepted: 0, rejected: 0, total: 0 }
+    }
+    
+    const changes = this.state.currentSession.changes
+    return {
+      pending: changes.filter(c => c.status === 'pending').length,
+      accepted: changes.filter(c => c.status === 'accepted').length,
+      rejected: changes.filter(c => c.status === 'rejected').length,
+      total: changes.length,
+    }
+  }
+
+  /**
+   * Generate unified diff for all changes
+   */
+  generateUnifiedDiff(): string {
+    if (!this.state.currentSession) return ''
+    
+    let diff = ''
+    
+    for (const change of this.state.currentSession.changes) {
+      diff += `\n${'='.repeat(60)}\n`
+      diff += `File: ${change.relativePath}\n`
+      diff += `Type: ${change.changeType}\n`
+      diff += `Status: ${change.status}\n`
+      diff += `Lines: +${change.linesAdded} -${change.linesRemoved}\n`
+      diff += `${'='.repeat(60)}\n\n`
+      
+      if (change.changeType === 'create') {
+        diff += `+++ ${change.relativePath} (new file)\n`
+        if (change.newContent) {
+          diff += change.newContent.split('\n').map(l => `+ ${l}`).join('\n')
+        }
+      } else if (change.changeType === 'delete') {
+        diff += `--- ${change.relativePath} (deleted)\n`
+        if (change.oldContent) {
+          diff += change.oldContent.split('\n').map(l => `- ${l}`).join('\n')
+        }
+      } else {
+        // Modified - show simple diff
+        diff += `--- ${change.relativePath}\n`
+        diff += `+++ ${change.relativePath}\n`
+        // For a real diff, we'd use a diff algorithm here
+        // This is simplified
+        if (change.oldContent && change.newContent) {
+          const oldLines = change.oldContent.split('\n')
+          const newLines = change.newContent.split('\n')
+          
+          // Simple line-by-line comparison
+          const maxLines = Math.max(oldLines.length, newLines.length)
+          for (let i = 0; i < maxLines; i++) {
+            const oldLine = oldLines[i]
+            const newLine = newLines[i]
+            
+            if (oldLine === newLine) {
+              diff += `  ${oldLine || ''}\n`
+            } else {
+              if (oldLine !== undefined) diff += `- ${oldLine}\n`
+              if (newLine !== undefined) diff += `+ ${newLine}\n`
+            }
+          }
+        }
+      }
+      
+      diff += '\n'
+    }
+    
+    return diff
+  }
+
+  // ============ Private Methods ============
+
+  private updateSessionStats(): void {
+    if (!this.state.currentSession) return
+    
+    const changes = this.state.currentSession.changes
+    this.state.currentSession.totalFiles = changes.length
+    this.state.currentSession.totalLinesAdded = changes.reduce((sum, c) => sum + c.linesAdded, 0)
+    this.state.currentSession.totalLinesRemoved = changes.reduce((sum, c) => sum + c.linesRemoved, 0)
+  }
+
+  private checkSessionComplete(): void {
+    if (!this.state.currentSession) return
+    
+    const hasPending = this.state.currentSession.changes.some(c => c.status === 'pending')
+    if (!hasPending) {
+      this.state.currentSession.status = 'completed'
+    }
   }
 }
 
-export const composerService = new ComposerService()
+// Export singleton
+export const composerService = new ComposerServiceClass()
+
+// Export types
+export type { ComposerServiceClass }

@@ -1,7 +1,15 @@
 /**
- * Store Slices 导出
+ * Store slices 导出
  */
-export * from './fileSlice'
-export * from './chatSlice'
-export * from './settingsSlice'
-export * from './uiSlice'
+
+export { createFileSlice } from './fileSlice'
+export type { FileSlice, OpenFile, FileItem } from './fileSlice'
+
+export { createChatSlice } from './chatSlice'
+export type { ChatSlice, ChatMode, Message, ToolCall, ContextStats } from './chatSlice'
+
+export { createSettingsSlice } from './settingsSlice'
+export type { SettingsSlice, ProviderType, LLMConfig, AutoApproveSettings } from './settingsSlice'
+
+export { createUISlice } from './uiSlice'
+export type { UISlice, SidePanel, DiffView } from './uiSlice'

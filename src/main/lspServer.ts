@@ -15,6 +15,9 @@ let contentBuffer = ''
 let contentLength = -1
 let currentWorkspacePath: string | null = null
 
+// 存储最新的诊断信息（按 URI 索引）
+const diagnosticsCache = new Map<string, any[]>()
+
 /**
  * 启动 TypeScript Language Server
  */
@@ -144,13 +147,32 @@ function handleServerMessage(message: any): void {
  * 处理服务器通知
  */
 function handleServerNotification(message: any): void {
-  // 将诊断信息发送到渲染进程
+  // 将诊断信息发送到渲染进程并缓存
   if (message.method === 'textDocument/publishDiagnostics') {
+    const { uri, diagnostics } = message.params
+    
+    // 缓存诊断信息
+    diagnosticsCache.set(uri, diagnostics)
+    
+    // 发送到渲染进程
     const windows = BrowserWindow.getAllWindows()
     windows.forEach((win) => {
       win.webContents.send('lsp:diagnostics', message.params)
     })
   }
+}
+
+/**
+ * 获取文件的诊断信息
+ */
+export function getDiagnosticsForFile(filePath: string): any[] {
+  // 转换路径为 URI
+  const normalizedPath = filePath.replace(/\\/g, '/')
+  const uri = normalizedPath.startsWith('/') 
+    ? `file://${normalizedPath}` 
+    : `file:///${normalizedPath}`
+  
+  return diagnosticsCache.get(uri) || []
 }
 
 /**
@@ -650,5 +672,10 @@ export function registerLspHandlers(): void {
       console.error('[LSP] Inlay hint error:', error)
       return null
     }
+  })
+
+  // 获取文件的诊断信息（用于 Agent 工具）
+  ipcMain.handle('lsp:getDiagnostics', (_, filePath: string) => {
+    return getDiagnosticsForFile(filePath)
   })
 }

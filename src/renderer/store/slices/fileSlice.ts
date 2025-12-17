@@ -2,7 +2,12 @@
  * 文件相关状态切片
  */
 import { StateCreator } from 'zustand'
-import { FileItem } from '../../types/electron'
+
+export interface FileItem {
+  name: string
+  path: string
+  isDirectory: boolean
+}
 
 export interface OpenFile {
   path: string
@@ -12,14 +17,12 @@ export interface OpenFile {
 }
 
 export interface FileSlice {
-  // State
   workspacePath: string | null
   files: FileItem[]
   expandedFolders: Set<string>
   openFiles: OpenFile[]
   activeFilePath: string | null
 
-  // Actions
   setWorkspacePath: (path: string | null) => void
   setFiles: (files: FileItem[]) => void
   toggleFolder: (path: string) => void
@@ -31,14 +34,12 @@ export interface FileSlice {
 }
 
 export const createFileSlice: StateCreator<FileSlice, [], [], FileSlice> = (set) => ({
-  // Initial state
   workspacePath: null,
   files: [],
   expandedFolders: new Set(),
   openFiles: [],
   activeFilePath: null,
 
-  // Actions
   setWorkspacePath: (path) => set({ workspacePath: path }),
   setFiles: (files) => set({ files }),
   toggleFolder: (path) =>

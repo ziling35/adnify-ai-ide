@@ -542,9 +542,11 @@ class AgentServiceClass {
       })
     }
 
-    // 如果文件修改成功，添加到 pendingChanges
+    // 如果文件修改成功，添加到 pendingChanges 和 Composer
     if (result.success && fullPath && (WRITE_TOOLS.includes(name) || name === 'delete_file_or_folder')) {
-      const meta = result.meta as { linesAdded?: number; linesRemoved?: number } | undefined
+      const meta = result.meta as { linesAdded?: number; linesRemoved?: number; newContent?: string; isNewFile?: boolean } | undefined
+      
+      // 添加到 pendingChanges (用于 UI 显示)
       store.addPendingChange({
         filePath: fullPath,
         toolCallId: id,
@@ -553,6 +555,28 @@ class AgentServiceClass {
         linesAdded: meta?.linesAdded || 0,
         linesRemoved: meta?.linesRemoved || 0,
       })
+      
+      // 同时添加到 Composer (用于批量操作)
+      try {
+        const { composerService } = await import('../composerService')
+        const relativePath = workspacePath 
+          ? fullPath.replace(workspacePath, '').replace(/^[\\/]/, '')
+          : fullPath
+        
+        composerService.addChange({
+          filePath: fullPath,
+          relativePath,
+          oldContent: originalContent,
+          newContent: meta?.newContent || null,
+          changeType: name === 'delete_file_or_folder' ? 'delete' : (meta?.isNewFile ? 'create' : 'modify'),
+          linesAdded: meta?.linesAdded || 0,
+          linesRemoved: meta?.linesRemoved || 0,
+          toolCallId: id,
+        })
+      } catch (e) {
+        // Composer 是可选功能，失败不影响主流程
+        console.warn('[Agent] Failed to add to composer:', e)
+      }
     }
 
     // 添加工具结果到 store

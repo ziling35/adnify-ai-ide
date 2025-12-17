@@ -1,15 +1,124 @@
 /**
- * 类型定义统一导出
+ * 渲染进程类型定义
+ * 统一导出所有类型
  */
 
-// 从 store slices 导出类型
-export type { OpenFile } from '../store/slices/fileSlice'
-export type { ChatMode, Message, ToolCall, ContextStats } from '../store/slices/chatSlice'
-export type { ProviderType, LLMConfig, AutoApproveSettings } from '../store/slices/settingsSlice'
-export type { SidePanel, DiffView } from '../store/slices/uiSlice'
+// 从共享类型导入
+export type {
+  FileItem,
+  FileSnapshot,
+  MessageContent,
+  MessageContentPart,
+  LLMMessage,
+  LLMStreamChunk,
+  LLMToolCall,
+  LLMResult,
+  LLMError,
+  LLMConfig,
+  LLMSendMessageParams,
+  ToolDefinition,
+  ToolStatus,
+  ToolApprovalType,
+  ToolResultType,
+  ToolCall,
+  ToolExecutionResult,
+  SearchFilesOptions,
+  SearchFileResult,
+  EmbeddingProviderType,
+  EmbeddingConfig,
+  IndexStatus,
+  IndexSearchResult,
+  EmbeddingProvider,
+  LspPosition,
+  LspRange,
+  LspLocation,
+  LspDiagnostic,
+  LspHover,
+  LspCompletionItem,
+  LspCompletionList,
+  LspTextEdit,
+  LspWorkspaceEdit,
+  LspSignatureHelp,
+  LspDocumentSymbol,
+  LspSymbolInformation,
+  LspCodeAction,
+  LspFormattingOptions,
+  LspDocumentHighlight,
+  LspFoldingRange,
+  LspInlayHint,
+  LspPrepareRename,
+} from '../../shared/types'
 
-// 从 electron 类型导出
-export type { FileItem, LLMStreamChunk, LLMToolCall, LLMResult, LLMError } from './electron'
+// Provider 类型
+export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'custom'
 
-// 从 provider 类型导出
-export type { ProviderModelConfig } from './provider'
+// 聊天模式
+export type ChatMode = 'chat' | 'agent'
+
+// 打开的文件
+export interface OpenFile {
+  path: string
+  content: string
+  isDirty: boolean
+  originalContent?: string
+}
+
+// Diff 视图
+export interface DiffView {
+  original: string
+  modified: string
+  filePath: string
+}
+
+// 侧边栏面板
+export type SidePanel = 'explorer' | 'search' | 'git' | 'extensions' | null
+
+// 上下文项类型
+export interface FileContext {
+  type: 'File'
+  uri: string
+}
+
+export interface CodeSelectionContext {
+  type: 'CodeSelection'
+  uri: string
+  range: { start: number; end: number }
+  content: string
+}
+
+export interface FolderContext {
+  type: 'Folder'
+  uri: string
+}
+
+export interface CodebaseContext {
+  type: 'Codebase'
+}
+
+export interface GitContext {
+  type: 'Git'
+}
+
+export interface TerminalContext {
+  type: 'Terminal'
+}
+
+export interface SymbolsContext {
+  type: 'Symbols'
+}
+
+export type ContextItem =
+  | FileContext
+  | CodeSelectionContext
+  | FolderContext
+  | CodebaseContext
+  | GitContext
+  | TerminalContext
+  | SymbolsContext
+
+// 自动审批设置
+export interface AutoApproveSettings {
+  edits: boolean
+  terminal: boolean
+  dangerous: boolean
+}

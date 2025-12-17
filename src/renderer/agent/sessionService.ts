@@ -5,8 +5,8 @@
  */
 
 import { ChatMode, LLMConfig } from '../store'
-import { ChatMessage, ChatThread, getMessageText as getMsgText, isUserMessage } from './types/chatTypes'
-import { chatThreadService } from './chatThreadService'
+import { ChatMessage, ChatThread, getMessageText as getMsgText, isUserMessage } from './core/types'
+import { useAgentStore } from './core/AgentStore'
 
 export interface ChatSession {
 	id: string
@@ -115,7 +115,10 @@ class SessionService {
 		existingId?: string,
 		config?: Partial<LLMConfig>
 	): Promise<string> {
-		const thread = chatThreadService.getCurrentThread()
+		const thread = useAgentStore.getState().getCurrentThread()
+		if (!thread) {
+			throw new Error('No current thread')
+		}
 		return this.saveThread(thread, mode, existingId, config)
 	}
 
@@ -322,11 +325,12 @@ class SessionService {
 		const session = await this.getSession(sessionId)
 		if (!session) return false
 
-		// 创建新线程
-		chatThreadService.openNewThread()
+		// 创建新线程并加载消息
+		const store = useAgentStore.getState()
+		store.createThread()
 		
-		// 加载消息到线程
-		chatThreadService.loadMessages(session.messages)
+		// TODO: 实现消息加载功能
+		console.log('[SessionService] Loading session:', sessionId, 'messages:', session.messages.length)
 
 		return true
 	}

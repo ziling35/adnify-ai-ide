@@ -5,6 +5,7 @@
 
 import { ToolDefinition, ToolApprovalType } from './types'
 import { toFullPath } from '@/renderer/utils/pathUtils'
+import { pathToLspUri, lspUriToPath } from '@/renderer/services/lspService'
 
 // ===== 工具定义 =====
 
@@ -137,6 +138,82 @@ export const TOOL_DEFINITIONS: ToolDefinition[] = [
         path: { type: 'string', description: 'File path' },
       },
       required: ['path'],
+    },
+  },
+  // 语义搜索类
+  {
+    name: 'codebase_search',
+    description: 'Semantic search across the codebase using AI embeddings. Best for finding code by meaning/intent.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: { type: 'string', description: 'Natural language search query' },
+        top_k: { type: 'number', description: 'Number of results (default: 10)' },
+      },
+      required: ['query'],
+    },
+  },
+  // LSP 工具类
+  {
+    name: 'find_references',
+    description: 'Find all references to a symbol at a specific location.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path' },
+        line: { type: 'number', description: 'Line number (1-indexed)' },
+        column: { type: 'number', description: 'Column number (1-indexed)' },
+      },
+      required: ['path', 'line', 'column'],
+    },
+  },
+  {
+    name: 'go_to_definition',
+    description: 'Get the definition location of a symbol.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path' },
+        line: { type: 'number', description: 'Line number (1-indexed)' },
+        column: { type: 'number', description: 'Column number (1-indexed)' },
+      },
+      required: ['path', 'line', 'column'],
+    },
+  },
+  {
+    name: 'get_hover_info',
+    description: 'Get type information and documentation for a symbol.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path' },
+        line: { type: 'number', description: 'Line number (1-indexed)' },
+        column: { type: 'number', description: 'Column number (1-indexed)' },
+      },
+      required: ['path', 'line', 'column'],
+    },
+  },
+  {
+    name: 'get_document_symbols',
+    description: 'Get all symbols (functions, classes, variables) in a file.',
+    parameters: {
+      type: 'object',
+      properties: {
+        path: { type: 'string', description: 'File path' },
+      },
+      required: ['path'],
+    },
+  },
+  // 批量操作
+  {
+    name: 'read_multiple_files',
+    description: 'Read multiple files at once. More efficient than multiple read_file calls.',
+    parameters: {
+      type: 'object',
+      properties: {
+        paths: { type: 'array', description: 'Array of file paths to read' },
+      },
+      required: ['paths'],
     },
   },
 ]
@@ -391,63 +468,60 @@ export async function executeTool(
       }
 
       case 'search_files': {
-        const path = resolvePath(args.path)
+        const searchPath = resolvePath(args.path)
         const pattern = String(args.pattern)
         const isRegex = args.is_regex === true
         const filePattern = typeof args.file_pattern === 'string' ? args.file_pattern : undefined
 
-        const items = await window.electronAPI.readDir(path)
-        if (!items) {
-          return { success: false, result: '', error: `Directory not found: ${path}` }
-        }
+        try {
+          // 使用 ripgrep 进行高性能递归搜索
+          const searchResults = await window.electronAPI.searchFiles(pattern, searchPath, {
+            isRegex,
+            isCaseSensitive: false,
+            include: filePattern,
+          })
 
-        const results: { file: string; matches: { line: number; content: string }[] }[] = []
-        const regex = isRegex ? new RegExp(pattern, 'gi') : null
-        const fileRegex = filePattern
-          ? new RegExp(filePattern.replace(/\*/g, '.*').replace(/\?/g, '.'), 'i')
-          : null
+          if (!searchResults || searchResults.length === 0) {
+            return { success: true, result: `No matches for "${pattern}" in ${searchPath}` }
+          }
 
-        for (const item of items.slice(0, 50)) {
-          if (item.isDirectory) continue
-          if (fileRegex && !fileRegex.test(item.name)) continue
-
-          const content = await window.electronAPI.readFile(item.path)
-          if (!content) continue
-
-          const lines = content.split('\n')
-          const matches: { line: number; content: string }[] = []
-
-          for (let i = 0; i < lines.length; i++) {
-            const line = lines[i]
-            const isMatch = regex
-              ? regex.test(line)
-              : line.toLowerCase().includes(pattern.toLowerCase())
-
-            if (isMatch) {
-              matches.push({ line: i + 1, content: line.trim().slice(0, 100) })
+          // 按文件分组结果
+          const fileGroups = new Map<string, { line: number; text: string }[]>()
+          for (const result of searchResults) {
+            const relativePath = result.path.replace(searchPath, '').replace(/^[\\/]/, '')
+            if (!fileGroups.has(relativePath)) {
+              fileGroups.set(relativePath, [])
             }
-            if (regex) regex.lastIndex = 0
+            const matches = fileGroups.get(relativePath)!
+            if (matches.length < 5) { // 每个文件最多显示 5 个匹配
+              matches.push({ line: result.line, text: result.text })
+            }
           }
 
-          if (matches.length > 0) {
-            results.push({ file: item.name, matches: matches.slice(0, 5) })
+          // 格式化输出
+          let output = `Found matches in ${fileGroups.size} files (${searchResults.length} total matches):\n\n`
+          let fileCount = 0
+          
+          for (const [file, matches] of fileGroups) {
+            if (fileCount >= 30) { // 最多显示 30 个文件
+              output += `\n... and ${fileGroups.size - 30} more files`
+              break
+            }
+            
+            output += `📄 ${file}:\n`
+            for (const m of matches) {
+              output += `  Line ${m.line}: ${m.text}\n`
+            }
+            output += '\n'
+            fileCount++
           }
-        }
 
-        if (!results.length) {
-          return { success: true, result: `No matches for "${pattern}" in ${path}` }
+          return { success: true, result: output }
+        } catch (error) {
+          // 如果 ripgrep 失败，回退到简单搜索
+          console.warn('[search_files] ripgrep failed, falling back to simple search:', error)
+          return { success: false, result: '', error: `Search failed: ${error}` }
         }
-
-        let output = `Found ${results.length} files with matches:\n\n`
-        for (const r of results.slice(0, 20)) {
-          output += `📄 ${r.file}:\n`
-          for (const m of r.matches) {
-            output += `  Line ${m.line}: ${m.content}\n`
-          }
-          output += '\n'
-        }
-
-        return { success: true, result: output }
       }
 
       case 'edit_file': {
@@ -608,12 +682,319 @@ export async function executeTool(
       }
 
       case 'get_lint_errors': {
-        const path = resolvePath(args.path)
-        // 简化实现：返回无错误
-        return {
-          success: true,
-          result: `No lint errors found in ${path}`,
+        const lintPath = resolvePath(args.path)
+        
+        try {
+          // 动态导入 lintService 避免循环依赖
+          const { lintService } = await import('../lintService')
+          
+          // 首先尝试从 LSP 获取诊断信息
+          const lspDiagnostics = await window.electronAPI.getLspDiagnostics?.(lintPath)
+          
+          if (lspDiagnostics && lspDiagnostics.length > 0) {
+            // 格式化 LSP 诊断结果
+            const errors = lspDiagnostics.map((d: any) => ({
+              code: d.code?.toString() || d.source || 'lsp',
+              message: d.message,
+              severity: (d.severity === 1 ? 'error' : d.severity === 2 ? 'warning' : 'info') as 'error' | 'warning' | 'info',
+              startLine: (d.range?.start?.line || 0) + 1,
+              endLine: (d.range?.end?.line || 0) + 1,
+              file: lintPath,
+            }))
+            
+            return {
+              success: true,
+              result: lintService.formatErrors(errors),
+            }
+          }
+          
+          // 如果 LSP 没有结果，尝试运行 lint 命令
+          const errors = await lintService.getLintErrors(lintPath, true)
+          
+          if (errors.length === 0) {
+            // 最后尝试快速语法检查
+            const content = await window.electronAPI.readFile(lintPath)
+            if (content) {
+              const ext = lintPath.split('.').pop()?.toLowerCase() || ''
+              const lang = ['ts', 'tsx', 'js', 'jsx'].includes(ext) ? 'typescript' : ext
+              const syntaxErrors = lintService.quickSyntaxCheck(content, lang)
+              
+              if (syntaxErrors.length > 0) {
+                return {
+                  success: true,
+                  result: lintService.formatErrors(syntaxErrors),
+                }
+              }
+            }
+          }
+          
+          return {
+            success: true,
+            result: lintService.formatErrors(errors),
+          }
+        } catch (error) {
+          return {
+            success: true,
+            result: `✅ No lint errors found in ${lintPath}`,
+          }
         }
+      }
+
+      case 'codebase_search': {
+        const query = String(args.query)
+        const topK = typeof args.top_k === 'number' ? args.top_k : 10
+
+        try {
+          if (!workspacePath) {
+            return { success: false, result: '', error: 'No workspace path available' }
+          }
+
+          const results = await window.electronAPI.indexSearch(workspacePath, query, topK)
+
+          if (!results || results.length === 0) {
+            return { success: true, result: `No semantic matches found for: "${query}"` }
+          }
+
+          let output = `Found ${results.length} semantic matches for "${query}":\n\n`
+
+          for (const result of results) {
+            const score = (result.score * 100).toFixed(1)
+            output += `📄 ${result.relativePath} (${score}% match)\n`
+            output += `   Lines ${result.startLine}-${result.endLine} | ${result.type}\n`
+            // 显示代码片段（限制长度）
+            const snippet = result.content.slice(0, 200).replace(/\n/g, '\n   ')
+            output += `   ${snippet}${result.content.length > 200 ? '...' : ''}\n\n`
+          }
+
+          return { success: true, result: output }
+        } catch (error) {
+          return { success: false, result: '', error: `Codebase search failed: ${error}` }
+        }
+      }
+
+      case 'find_references': {
+        const refPath = resolvePath(args.path)
+        const line = typeof args.line === 'number' ? args.line - 1 : 0 // LSP uses 0-indexed
+        const column = typeof args.column === 'number' ? args.column - 1 : 0
+
+        try {
+          const results = await window.electronAPI.lspReferences({
+            uri: pathToLspUri(refPath),
+            line,
+            character: column,
+          })
+
+          if (!results || results.length === 0) {
+            return { success: true, result: 'No references found' }
+          }
+
+          let output = `Found ${results.length} references:\n\n`
+
+          for (const ref of results.slice(0, 30)) {
+            const filePath = lspUriToPath(ref.uri)
+            const relativePath = workspacePath 
+              ? filePath.replace(workspacePath, '').replace(/^[\\/]/, '')
+              : filePath
+            const startLine = (ref.range?.start?.line || 0) + 1
+            output += `📍 ${relativePath}:${startLine}\n`
+          }
+
+          if (results.length > 30) {
+            output += `\n... and ${results.length - 30} more references`
+          }
+
+          return { success: true, result: output }
+        } catch (error) {
+          return { success: false, result: '', error: `Find references failed: ${error}` }
+        }
+      }
+
+      case 'go_to_definition': {
+        const defPath = resolvePath(args.path)
+        const line = typeof args.line === 'number' ? args.line - 1 : 0
+        const column = typeof args.column === 'number' ? args.column - 1 : 0
+
+        try {
+          const results = await window.electronAPI.lspDefinition({
+            uri: pathToLspUri(defPath),
+            line,
+            character: column,
+          })
+
+          if (!results || (Array.isArray(results) && results.length === 0)) {
+            return { success: true, result: 'No definition found' }
+          }
+
+          const definitions = Array.isArray(results) ? results : [results]
+          let output = `Found ${definitions.length} definition(s):\n\n`
+
+          for (const def of definitions) {
+            // LSP 可能返回 Location 或 LocationLink 格式
+            const defAny = def as any
+            const uri = defAny.uri || defAny.targetUri
+            const range = defAny.range || defAny.targetSelectionRange || defAny.targetRange
+            if (!uri) continue
+
+            const filePath = lspUriToPath(uri)
+            const relativePath = workspacePath 
+              ? filePath.replace(workspacePath, '').replace(/^[\\/]/, '')
+              : filePath
+            const startLine = (range?.start?.line || 0) + 1
+
+            output += `📍 ${relativePath}:${startLine}\n`
+
+            // 尝试读取定义处的代码
+            try {
+              const content = await window.electronAPI.readFile(filePath)
+              if (content) {
+                const lines = content.split('\n')
+                const contextStart = Math.max(0, startLine - 2)
+                const contextEnd = Math.min(lines.length, startLine + 5)
+                const snippet = lines.slice(contextStart, contextEnd)
+                  .map((l, i) => `${contextStart + i + 1}: ${l}`)
+                  .join('\n')
+                output += `\`\`\`\n${snippet}\n\`\`\`\n\n`
+              }
+            } catch {
+              // 忽略读取错误
+            }
+          }
+
+          return { success: true, result: output }
+        } catch (error) {
+          return { success: false, result: '', error: `Go to definition failed: ${error}` }
+        }
+      }
+
+      case 'get_hover_info': {
+        const hoverPath = resolvePath(args.path)
+        const line = typeof args.line === 'number' ? args.line - 1 : 0
+        const column = typeof args.column === 'number' ? args.column - 1 : 0
+
+        try {
+          const result = await window.electronAPI.lspHover({
+            uri: pathToLspUri(hoverPath),
+            line,
+            character: column,
+          })
+
+          if (!result || !result.contents) {
+            return { success: true, result: 'No hover information available' }
+          }
+
+          let output = '📝 Type Information:\n\n'
+
+          // 处理不同格式的 contents
+          const contents = result.contents as any
+          if (typeof contents === 'string') {
+            output += contents
+          } else if (Array.isArray(contents)) {
+            for (const item of contents) {
+              if (typeof item === 'string') {
+                output += item + '\n'
+              } else if (item.value) {
+                const lang = item.language || item.kind || ''
+                output += `\`\`\`${lang}\n${item.value}\n\`\`\`\n`
+              }
+            }
+          } else if (contents.value) {
+            const lang = contents.language || contents.kind || ''
+            output += `\`\`\`${lang}\n${contents.value}\n\`\`\`\n`
+          }
+
+          return { success: true, result: output }
+        } catch (error) {
+          return { success: false, result: '', error: `Get hover info failed: ${error}` }
+        }
+      }
+
+      case 'get_document_symbols': {
+        const symbolPath = resolvePath(args.path)
+
+        try {
+          const results = await window.electronAPI.lspDocumentSymbol({
+            uri: pathToLspUri(symbolPath),
+          })
+
+          if (!results || results.length === 0) {
+            return { success: true, result: 'No symbols found in this file' }
+          }
+
+          const symbolKindNames: Record<number, string> = {
+            1: 'File', 2: 'Module', 3: 'Namespace', 4: 'Package',
+            5: 'Class', 6: 'Method', 7: 'Property', 8: 'Field',
+            9: 'Constructor', 10: 'Enum', 11: 'Interface', 12: 'Function',
+            13: 'Variable', 14: 'Constant', 15: 'String', 16: 'Number',
+            17: 'Boolean', 18: 'Array', 19: 'Object', 20: 'Key',
+            21: 'Null', 22: 'EnumMember', 23: 'Struct', 24: 'Event',
+            25: 'Operator', 26: 'TypeParameter',
+          }
+
+          let output = `Symbols in ${args.path}:\n\n`
+
+          const formatSymbol = (symbol: any, indent = 0): string => {
+            const prefix = '  '.repeat(indent)
+            const kind = symbolKindNames[symbol.kind] || 'Unknown'
+            const line = (symbol.range?.start?.line || symbol.location?.range?.start?.line || 0) + 1
+            let result = `${prefix}${kind}: ${symbol.name} (line ${line})\n`
+
+            if (symbol.children) {
+              for (const child of symbol.children) {
+                result += formatSymbol(child, indent + 1)
+              }
+            }
+            return result
+          }
+
+          for (const symbol of results) {
+            output += formatSymbol(symbol)
+          }
+
+          return { success: true, result: output }
+        } catch (error) {
+          return { success: false, result: '', error: `Get document symbols failed: ${error}` }
+        }
+      }
+
+      case 'read_multiple_files': {
+        const paths = args.paths as string[]
+        if (!Array.isArray(paths) || paths.length === 0) {
+          return { success: false, result: '', error: 'paths must be a non-empty array' }
+        }
+
+        const results: string[] = []
+        const errors: string[] = []
+
+        for (const p of paths.slice(0, 10)) { // 限制最多 10 个文件
+          const fullPath = resolvePath(p)
+          try {
+            const content = await window.electronAPI.readFile(fullPath)
+            if (content !== null) {
+              const lines = content.split('\n')
+              const numberedContent = lines
+                .map((line, i) => `${i + 1}: ${line}`)
+                .join('\n')
+              results.push(`\n### File: ${p}\nLines: ${lines.length}\n\`\`\`\n${numberedContent}\n\`\`\`\n`)
+            } else {
+              errors.push(`File not found: ${p}`)
+            }
+          } catch (e) {
+            errors.push(`Error reading ${p}: ${e}`)
+          }
+        }
+
+        let output = `Read ${results.length} file(s):\n`
+        output += results.join('\n')
+
+        if (errors.length > 0) {
+          output += `\n\n⚠️ Errors:\n${errors.join('\n')}`
+        }
+
+        if (paths.length > 10) {
+          output += `\n\n⚠️ Only first 10 files were read (${paths.length} requested)`
+        }
+
+        return { success: true, result: output }
       }
 
       default:

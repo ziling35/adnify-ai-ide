@@ -18,6 +18,7 @@ class StreamingEditService {
 		const editId = crypto.randomUUID()
 
 		const state: StreamingEditState = {
+			editId,
 			filePath,
 			originalContent,
 			currentContent: originalContent,
