@@ -1,5 +1,6 @@
 /**
  * Git 服务 (使用安全的 Git API)
+ * 支持多根目录工作区
  */
 
 export interface GitStatus {
@@ -32,23 +33,23 @@ interface GitExecResult {
 }
 
 class GitService {
-    private workspacePath: string | null = null
+    private primaryWorkspacePath: string | null = null
 
     setWorkspace(path: string | null) {
-        this.workspacePath = path
+        this.primaryWorkspacePath = path
     }
 
     /**
      * 执行 Git 命令 (使用安全的 gitExecSecure API)
      */
-    private async exec(args: string[]): Promise<GitExecResult> {
-        if (!this.workspacePath) {
+    private async exec(args: string[], rootPath?: string): Promise<GitExecResult> {
+        const targetPath = rootPath || this.primaryWorkspacePath
+        if (!targetPath) {
             return { stdout: '', stderr: 'No workspace', exitCode: 1 }
         }
 
-        // 使用安全的 git:execSecure API
         try {
-            const result = await window.electronAPI.gitExecSecure(args, this.workspacePath)
+            const result = await window.electronAPI.gitExecSecure(args, targetPath)
             return {
                 stdout: result.stdout || '',
                 stderr: result.stderr || '',
@@ -66,10 +67,9 @@ class GitService {
     /**
      * 检查是否是 Git 仓库
      */
-    async isGitRepo(): Promise<boolean> {
-        if (!this.workspacePath) return false
+    async isGitRepo(rootPath?: string): Promise<boolean> {
         try {
-            const result = await this.exec(['rev-parse', '--is-inside-work-tree'])
+            const result = await this.exec(['rev-parse', '--is-inside-work-tree'], rootPath)
             return result.exitCode === 0
         } catch {
             return false
@@ -79,9 +79,9 @@ class GitService {
     /**
      * 获取当前分支
      */
-    async getCurrentBranch(): Promise<string | null> {
+    async getCurrentBranch(rootPath?: string): Promise<string | null> {
         try {
-            const result = await this.exec(['branch', '--show-current'])
+            const result = await this.exec(['branch', '--show-current'], rootPath)
             return result.exitCode === 0 ? result.stdout.trim() : null
         } catch {
             return null
@@ -91,29 +91,29 @@ class GitService {
     /**
      * 获取 Git 状态
      */
-    async getStatus(): Promise<GitStatus | null> {
-        if (!this.workspacePath) return null
-
+    async getStatus(rootPath?: string): Promise<GitStatus | null> {
         try {
             // 获取分支信息
-            const branchResult = await this.exec(['branch', '--show-current'])
+            const branchResult = await this.exec(['branch', '--show-current'], rootPath)
             const branch = branchResult.stdout.trim() || 'HEAD'
 
             // 获取 ahead/behind
             let ahead = 0, behind = 0
             try {
-                const aheadBehind = await this.exec(['rev-list', '--left-right', '--count', '@{upstream}...HEAD'])
+                const aheadBehind = await this.exec(['rev-list', '--left-right', '--count', '@{upstream}...HEAD'], rootPath)
                 if (aheadBehind.exitCode === 0) {
-                    const [b, a] = aheadBehind.stdout.trim().split(/\s+/).map(Number)
-                    ahead = a || 0
-                    behind = b || 0
+                    const parts = aheadBehind.stdout.trim().split(/\s+/)
+                    if (parts.length >= 2) {
+                        behind = Number(parts[0]) || 0
+                        ahead = Number(parts[1]) || 0
+                    }
                 }
             } catch {
                 // 没有上游分支
             }
 
             // 获取状态 (porcelain v1 格式)
-            const statusResult = await this.exec(['status', '--porcelain=v1'])
+            const statusResult = await this.exec(['status', '--porcelain=v1'], rootPath)
 
             const staged: GitFileChange[] = []
             const unstaged: GitFileChange[] = []
@@ -127,13 +127,11 @@ class GitService {
                     const workTreeStatus = line[1]
                     const filePath = line.slice(3).trim()
 
-                    // 未跟踪文件
                     if (indexStatus === '?' && workTreeStatus === '?') {
                         untracked.push(filePath)
                         continue
                     }
 
-                    // 暂存区变更
                     if (indexStatus !== ' ' && indexStatus !== '?') {
                         staged.push({
                             path: filePath,
@@ -141,7 +139,6 @@ class GitService {
                         })
                     }
 
-                    // 工作区变更
                     if (workTreeStatus !== ' ' && workTreeStatus !== '?') {
                         unstaged.push({
                             path: filePath,
@@ -170,12 +167,12 @@ class GitService {
     /**
      * 获取文件 diff
      */
-    async getFileDiff(filePath: string, staged: boolean = false): Promise<string | null> {
+    async getFileDiff(filePath: string, staged: boolean = false, rootPath?: string): Promise<string | null> {
         try {
             const args = staged
                 ? ['diff', '--cached', '--', filePath]
                 : ['diff', '--', filePath]
-            const result = await this.exec(args)
+            const result = await this.exec(args, rootPath)
             return result.exitCode === 0 ? result.stdout : null
         } catch {
             return null
@@ -185,86 +182,55 @@ class GitService {
     /**
      * 获取 HEAD 版本的文件内容
      */
-    async getHeadFileContent(absolutePath: string): Promise<string | null> {
-        if (!this.workspacePath) return null
+    async getHeadFileContent(absolutePath: string, rootPath?: string): Promise<string | null> {
+        const targetRoot = rootPath || this.primaryWorkspacePath
+        if (!targetRoot) return null
 
         // 转换为相对路径
         let relativePath = absolutePath
-        if (absolutePath.startsWith(this.workspacePath)) {
-            relativePath = absolutePath.slice(this.workspacePath.length)
+        if (absolutePath.startsWith(targetRoot)) {
+            relativePath = absolutePath.slice(targetRoot.length)
             if (relativePath.startsWith('/') || relativePath.startsWith('\\')) {
                 relativePath = relativePath.slice(1)
             }
         }
-        // 统一使用正斜杠
         relativePath = relativePath.replace(/\\/g, '/')
 
         try {
-            const result = await this.exec(['show', `HEAD:${relativePath}`])
+            const result = await this.exec(['show', `HEAD:${relativePath}`], targetRoot)
             return result.exitCode === 0 ? result.stdout : ''
         } catch {
             return ''
         }
     }
 
-    /**
-     * 暂存文件
-     */
-    async stageFile(filePath: string): Promise<boolean> {
-        try {
-            const result = await this.exec(['add', '--', filePath])
-            return result.exitCode === 0
-        } catch {
-            return false
-        }
+    async stageFile(filePath: string, rootPath?: string): Promise<boolean> {
+        const result = await this.exec(['add', '--', filePath], rootPath)
+        return result.exitCode === 0
     }
 
-    /**
-     * 暂存所有文件
-     */
-    async stageAll(): Promise<boolean> {
-        try {
-            const result = await this.exec(['add', '-A'])
-            return result.exitCode === 0
-        } catch {
-            return false
-        }
+    async stageAll(rootPath?: string): Promise<boolean> {
+        const result = await this.exec(['add', '-A'], rootPath)
+        return result.exitCode === 0
     }
 
-    /**
-     * 取消暂存文件
-     */
-    async unstageFile(filePath: string): Promise<boolean> {
-        try {
-            const result = await this.exec(['reset', 'HEAD', '--', filePath])
-            return result.exitCode === 0
-        } catch {
-            return false
-        }
+    async unstageFile(filePath: string, rootPath?: string): Promise<boolean> {
+        const result = await this.exec(['reset', 'HEAD', '--', filePath], rootPath)
+        return result.exitCode === 0
     }
 
-    /**
-     * 放弃文件更改
-     */
-    async discardChanges(filePath: string): Promise<boolean> {
-        try {
-            const result = await this.exec(['checkout', '--', filePath])
-            return result.exitCode === 0
-        } catch {
-            return false
-        }
+    async discardChanges(filePath: string, rootPath?: string): Promise<boolean> {
+        const result = await this.exec(['checkout', '--', filePath], rootPath)
+        return result.exitCode === 0
     }
 
-    /**
-     * 获取最近提交
-     */
-    async getRecentCommits(count: number = 10): Promise<GitCommit[]> {
+    async getRecentCommits(count: number = 10, rootPath?: string): Promise<GitCommit[]> {
         try {
             const result = await this.exec([
                 'log',
                 `-${count}`,
                 '--pretty=format:%H|%h|%s|%an|%aI'
-            ])
+            ], rootPath)
 
             if (result.exitCode !== 0 || !result.stdout) return []
 
@@ -283,91 +249,50 @@ class GitService {
         }
     }
 
-    /**
-     * 提交
-     */
-    async commit(message: string): Promise<{ success: boolean; error?: string }> {
+    async commit(message: string, rootPath?: string): Promise<{ success: boolean; error?: string }> {
         try {
-            const result = await this.exec(['commit', '-m', message])
+            const result = await this.exec(['commit', '-m', message], rootPath)
             return {
                 success: result.exitCode === 0,
                 error: result.exitCode !== 0 ? result.stderr || result.stdout : undefined,
             }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
+        } catch (e: any) {
+            return { success: false, error: e.message }
         }
     }
 
-    /**
-     * 初始化仓库
-     */
-    async init(): Promise<boolean> {
-        try {
-            const result = await this.exec(['init'])
-            return result.exitCode === 0
-        } catch {
-            return false
-        }
+    async init(rootPath?: string): Promise<boolean> {
+        const result = await this.exec(['init'], rootPath)
+        return result.exitCode === 0
     }
 
-    /**
-     * 拉取
-     */
-    async pull(): Promise<{ success: boolean; error?: string }> {
+    async pull(rootPath?: string): Promise<{ success: boolean; error?: string }> {
         try {
-            const result = await this.exec(['pull'])
+            const result = await this.exec(['pull'], rootPath)
             return {
                 success: result.exitCode === 0,
                 error: result.exitCode !== 0 ? result.stderr : undefined,
             }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
+        } catch (e: any) {
+            return { success: false, error: e.message }
         }
     }
 
-    /**
-     * 推送
-     */
-    async push(): Promise<{ success: boolean; error?: string }> {
+    async push(rootPath?: string): Promise<{ success: boolean; error?: string }> {
         try {
-            const result = await this.exec(['push'])
+            const result = await this.exec(['push'], rootPath)
             return {
                 success: result.exitCode === 0,
                 error: result.exitCode !== 0 ? result.stderr : undefined,
             }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
+        } catch (e: any) {
+            return { success: false, error: e.message }
         }
     }
 
-    /**
-     * 推送到指定远程和分支
-     */
-    async pushTo(remote: string, branch: string, setUpstream: boolean = false): Promise<{ success: boolean; error?: string }> {
+    async getBranches(rootPath?: string): Promise<{ name: string; current: boolean; remote: boolean; upstream?: string }[]> {
         try {
-            const args = setUpstream
-                ? ['push', '-u', remote, branch]
-                : ['push', remote, branch]
-            const result = await this.exec(args)
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * 获取所有分支
-     */
-    async getBranches(): Promise<{ name: string; current: boolean; remote: boolean; upstream?: string }[]> {
-        try {
-            const result = await this.exec(['branch', '-a', '-vv'])
+            const result = await this.exec(['branch', '-a', '-vv'], rootPath)
             if (result.exitCode !== 0 || !result.stdout) return []
 
             const branches: { name: string; current: boolean; remote: boolean; upstream?: string }[] = []
@@ -379,11 +304,9 @@ class GitService {
                 const parts = trimmed.split(/\s+/)
                 const name = parts[0]
 
-                // 检查是否是远程分支
                 const remote = name.startsWith('remotes/')
                 const cleanName = remote ? name.replace('remotes/', '') : name
 
-                // 提取上游分支
                 const upstreamMatch = line.match(/\[([^\]]+)\]/)
                 const upstream = upstreamMatch ? upstreamMatch[1].split(':')[0] : undefined
 
@@ -396,66 +319,62 @@ class GitService {
         }
     }
 
-    /**
-     * 创建分支
-     */
-    async createBranch(name: string, checkout: boolean = true): Promise<{ success: boolean; error?: string }> {
+    async checkoutBranch(name: string, rootPath?: string): Promise<{ success: boolean; error?: string }> {
         try {
-            const args = checkout ? ['checkout', '-b', name] : ['branch', name]
-            const result = await this.exec(args)
+            const result = await this.exec(['checkout', name], rootPath)
             return {
                 success: result.exitCode === 0,
                 error: result.exitCode !== 0 ? result.stderr : undefined,
             }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
+        } catch (e: any) {
+            return { success: false, error: e.message }
         }
     }
 
-    /**
-     * 切换分支
-     */
-    async checkoutBranch(name: string): Promise<{ success: boolean; error?: string }> {
+    async createBranch(name: string, rootPath?: string): Promise<{ success: boolean; error?: string }> {
         try {
-            const result = await this.exec(['checkout', name])
+            const result = await this.exec(['checkout', '-b', name], rootPath)
             return {
                 success: result.exitCode === 0,
                 error: result.exitCode !== 0 ? result.stderr : undefined,
             }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
+        } catch (e: any) {
+            return { success: false, error: e.message }
         }
     }
 
-    /**
-     * 删除分支
-     */
-    async deleteBranch(name: string, force: boolean = false): Promise<{ success: boolean; error?: string }> {
+    async stash(message?: string, rootPath?: string): Promise<{ success: boolean; error?: string }> {
         try {
-            const args = force ? ['branch', '-D', name] : ['branch', '-d', name]
-            const result = await this.exec(args)
+            const args = ['stash', 'push']
+            if (message) args.push('-m', message)
+            const result = await this.exec(args, rootPath)
             return {
                 success: result.exitCode === 0,
                 error: result.exitCode !== 0 ? result.stderr : undefined,
             }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
+        } catch (e: any) {
+            return { success: false, error: e.message }
         }
     }
 
-    /**
-     * 合并分支
-     */
-    async mergeBranch(name: string): Promise<{ success: boolean; error?: string; conflicts?: string[] }> {
+    async stashApply(index: number, rootPath?: string): Promise<{ success: boolean; error?: string }> {
         try {
-            const result = await this.exec(['merge', name])
+            const result = await this.exec(['stash', 'apply', `stash@{${index}}`], rootPath)
+            return {
+                success: result.exitCode === 0,
+                error: result.exitCode !== 0 ? result.stderr : undefined,
+            }
+        } catch (e: any) {
+            return { success: false, error: e.message }
+        }
+    }
+
+    async mergeBranch(name: string, rootPath?: string): Promise<{ success: boolean; error?: string; conflicts?: string[] }> {
+        try {
+            const result = await this.exec(['merge', name], rootPath)
 
             if (result.exitCode !== 0) {
-                // 检查是否有冲突
-                const statusResult = await this.exec(['status', '--porcelain'])
+                const statusResult = await this.exec(['status', '--porcelain'], rootPath)
                 const conflicts = statusResult.stdout
                     .split('\n')
                     .filter(line => line.startsWith('UU') || line.startsWith('AA') || line.startsWith('DD'))
@@ -469,25 +388,21 @@ class GitService {
             }
 
             return { success: true }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
+        } catch (e: any) {
+            return { success: false, error: e.message }
         }
     }
 
-    /**
-     * 获取远程列表
-     */
-    async getRemotes(): Promise<{ name: string; url: string; type: 'fetch' | 'push' }[]> {
+    async getRemotes(rootPath?: string): Promise<{ name: string; url: string; type: 'fetch' | 'push' }[]> {
         try {
-            const result = await this.exec(['remote', '-v'])
+            const result = await this.exec(['remote', '-v'], rootPath)
             if (result.exitCode !== 0 || !result.stdout) return []
 
             const remotes: { name: string; url: string; type: 'fetch' | 'push' }[] = []
             const lines = result.stdout.trim().split('\n').filter(Boolean)
 
             for (const line of lines) {
-                const match = line.match(/^(\\S+)\\s+(\\S+)\\s+\\((fetch|push)\\)$/)
+                const match = line.match(/^(\S+)\s+(\S+)\s+\((fetch|push)\)$/)
                 if (match) {
                     remotes.push({
                         name: match[1],
@@ -503,32 +418,13 @@ class GitService {
         }
     }
 
-    /**
-     * 添加远程
-     */
-    async addRemote(name: string, url: string): Promise<{ success: boolean; error?: string }> {
+    async getStashList(rootPath?: string): Promise<{ index: number; message: string; branch: string }[]> {
         try {
-            const result = await this.exec(['remote', 'add', name, url])
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * 获取 stash 列表
-     */
-    async getStashList(): Promise<{ index: number; message: string; branch: string }[]> {
-        try {
-            const result = await this.exec(['stash', 'list'])
+            const result = await this.exec(['stash', 'list'], rootPath)
             if (result.exitCode !== 0 || !result.stdout) return []
 
             return result.stdout.trim().split('\n').filter(Boolean).map((line, index) => {
-                const match = line.match(/^stash@{(\\d+)}:\\s+(?:On\\s+(\\S+):\\s+)?(.+)$/)
+                const match = line.match(/^stash@{(\d+)}:\s+(?:On\s+(\S+):\s+)?(.+)$/)
                 return {
                     index: match ? parseInt(match[1]) : index,
                     branch: match?.[2] || 'unknown',
@@ -540,82 +436,7 @@ class GitService {
         }
     }
 
-    /**
-     * 暂存更改
-     */
-    async stash(message?: string): Promise<{ success: boolean; error?: string }> {
-        try {
-            const args = message ? ['stash', 'push', '-m', message] : ['stash']
-            const result = await this.exec(args)
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * 应用 stash
-     */
-    async stashApply(index: number = 0, drop: boolean = false): Promise<{ success: boolean; error?: string }> {
-        try {
-            const command = drop ? 'pop' : 'apply'
-            const result = await this.exec(['stash', command, `stash@{${index}}`])
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * 获取文件的 blame 信息
-     */
-    async blame(filePath: string): Promise<{ line: number; hash: string; author: string; date: Date; content: string }[]> {
-        try {
-            const result = await this.exec(['blame', '--porcelain', filePath])
-            if (result.exitCode !== 0 || !result.stdout) return []
-
-            const lines: { line: number; hash: string; author: string; date: Date; content: string }[] = []
-            const chunks = result.stdout.split(/^([a-f0-9]{40})/m).filter(Boolean)
-
-            let lineNum = 0
-            for (let i = 0; i < chunks.length; i += 2) {
-                const hash = chunks[i]
-                const info = chunks[i + 1] || ''
-
-                const authorMatch = info.match(/^author (.+)$/m)
-                const timeMatch = info.match(/^author-time (\\d+)$/m)
-                const contentMatch = info.match(/^\\t(.*)$/m)
-
-                if (authorMatch && timeMatch && contentMatch) {
-                    lineNum++
-                    lines.push({
-                        line: lineNum,
-                        hash: hash.slice(0, 8),
-                        author: authorMatch[1],
-                        date: new Date(parseInt(timeMatch[1]) * 1000),
-                        content: contentMatch[1],
-                    })
-                }
-            }
-
-            return lines
-        } catch {
-            return []
-        }
-    }
-
-    /**
-     * 获取文件历史
-     */
-    async getFileHistory(filePath: string, count: number = 20): Promise<GitCommit[]> {
+    async getFileHistory(filePath: string, count: number = 20, rootPath?: string): Promise<GitCommit[]> {
         try {
             const result = await this.exec([
                 'log',
@@ -624,7 +445,7 @@ class GitService {
                 '--follow',
                 '--',
                 filePath
-            ])
+            ], rootPath)
 
             if (result.exitCode !== 0 || !result.stdout) return []
 
@@ -640,145 +461,6 @@ class GitService {
             })
         } catch {
             return []
-        }
-    }
-
-    /**
-     * 撤销最后一次提交（保留更改）
-     */
-    async undoLastCommit(): Promise<{ success: boolean; error?: string }> {
-        try {
-            const result = await this.exec(['reset', '--soft', 'HEAD~1'])
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * 修改最后一次提交
-     */
-    async amendCommit(message?: string): Promise<{ success: boolean; error?: string }> {
-        try {
-            const args = message
-                ? ['commit', '--amend', '-m', message]
-                : ['commit', '--amend', '--no-edit']
-            const result = await this.exec(args)
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * 获取标签列表
-     */
-    async getTags(): Promise<{ name: string; hash: string; message?: string }[]> {
-        try {
-            const result = await this.exec(['tag', '-l', '--format=%(refname:short)|%(objectname:short)|%(subject)'])
-            if (result.exitCode !== 0 || !result.stdout) return []
-
-            return result.stdout.trim().split('\n').filter(Boolean).map(line => {
-                const [name, hash, message] = line.split('|')
-                return { name, hash, message: message || undefined }
-            })
-        } catch {
-            return []
-        }
-    }
-
-    /**
-     * 创建标签
-     */
-    async createTag(name: string, message?: string): Promise<{ success: boolean; error?: string }> {
-        try {
-            const args = message
-                ? ['tag', '-a', name, '-m', message]
-                : ['tag', name]
-            const result = await this.exec(args)
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * Fetch 远程更新
-     */
-    async fetch(remote?: string, prune: boolean = false): Promise<{ success: boolean; error?: string }> {
-        try {
-            const args = ['fetch']
-            if (prune) args.push('--prune')
-            if (remote) args.push(remote)
-
-            const result = await this.exec(args)
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * Rebase
-     */
-    async rebase(branch: string): Promise<{ success: boolean; error?: string }> {
-        try {
-            const result = await this.exec(['rebase', branch])
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * 中止 rebase
-     */
-    async rebaseAbort(): Promise<{ success: boolean; error?: string }> {
-        try {
-            const result = await this.exec(['rebase', '--abort'])
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
-        }
-    }
-
-    /**
-     * Cherry-pick
-     */
-    async cherryPick(commitHash: string): Promise<{ success: boolean; error?: string }> {
-        try {
-            const result = await this.exec(['cherry-pick', commitHash])
-            return {
-                success: result.exitCode === 0,
-                error: result.exitCode !== 0 ? result.stderr : undefined,
-            }
-        } catch (e: unknown) {
-            const err = e as { message?: string }
-            return { success: false, error: err.message }
         }
     }
 }

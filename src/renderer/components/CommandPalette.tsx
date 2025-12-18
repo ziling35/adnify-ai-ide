@@ -7,12 +7,14 @@ import { useState, useEffect, useCallback, useRef, memo } from 'react'
 import {
   Search, FolderOpen, Settings, Terminal,
   MessageSquare, History, Trash2, RefreshCw, Save,
-  X, Zap, Keyboard, Sparkles, ArrowRight
+  X, Zap, Keyboard, Sparkles, ArrowRight, Plus, FolderPlus
 } from 'lucide-react'
 import { useStore } from '@/renderer/store'
 import { useAgent } from '@/renderer/hooks/useAgent'
 import { t } from '@/renderer/i18n'
 import { keybindingService } from '@/renderer/services/keybindingService'
+import { adnifyDir } from '@/renderer/services/adnifyDirService'
+import { toast } from '@/renderer/components/Toast'
 
 interface Command {
   id: string
@@ -160,6 +162,46 @@ export default function CommandPalette({ onClose, onShowKeyboardShortcuts }: Com
       category: 'File',
       action: () => window.electronAPI.openFolder(),
       shortcut: 'Ctrl+O',
+    },
+    {
+      id: 'new-window',
+      label: 'New Window',
+      description: 'Open a new application window',
+      icon: Plus,
+      category: 'Window',
+      action: () => window.electronAPI.newWindow(),
+      shortcut: 'Ctrl+Shift+N',
+    },
+    {
+      id: 'add-folder',
+      label: 'Add Folder to Workspace...',
+      description: 'Add a new root folder to the current workspace',
+      icon: FolderPlus,
+      category: 'Workspace',
+      action: async () => {
+        const path = await window.electronAPI.addFolderToWorkspace()
+        if (path) {
+          const { addRoot } = useStore.getState()
+          addRoot(path)
+          // 初始化新根目录的 .adnify
+          await adnifyDir.initialize(path)
+          toast.success(`Added ${path} to workspace`)
+        }
+      },
+    },
+    {
+      id: 'save-workspace',
+      label: 'Save Workspace As...',
+      description: 'Save the current multi-root workspace configuration',
+      icon: Save,
+      category: 'Workspace',
+      action: async () => {
+        const { workspace } = useStore.getState()
+        if (workspace) {
+          const success = await window.electronAPI.saveWorkspace(workspace.configPath || '', workspace.roots)
+          if (success) toast.success('Workspace saved')
+        }
+      },
     },
     {
       id: 'save-file',

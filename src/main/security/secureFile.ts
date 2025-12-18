@@ -13,9 +13,9 @@ interface FileWatcherEvent {
   path: string
 }
 
-// 获取工作区路径
-const getWorkspace = (): string | null => {
-  return mainStore.get('lastWorkspacePath', null) as string | null
+// 获取工作区会话 (New)
+const getWorkspaceSession = (): { configPath: string | null; roots: string[] } | null => {
+  return mainStore.get('lastWorkspaceSession', null) as { configPath: string | null; roots: string[] } | null
 }
 
 // 获取主窗口
@@ -75,11 +75,11 @@ async function calculateDirectorySize(dirPath: string): Promise<number> {
 
 // 文件监听
 function setupFileWatcher(callback: (data: FileWatcherEvent) => void) {
-  const workspace = getWorkspace()
-  if (!workspace) return
+  const workspace = getWorkspaceSession()
+  if (!workspace || workspace.roots.length === 0) return
 
   const chokidar = require('chokidar')
-  const watcher = chokidar.watch(workspace, {
+  const watcher = chokidar.watch(workspace.roots, {
     ignored: [/node_modules/, /\.git/, /dist/, /build/, /\.adnify/, '**/*.tmp', '**/*.temp'],
     persistent: true,
     ignoreInitial: true,
@@ -91,16 +91,16 @@ function setupFileWatcher(callback: (data: FileWatcherEvent) => void) {
     .on('unlink', (path: string) => callback({ event: 'delete', path }))
     .on('error', (error: Error) => console.error('[Watcher] Error:', error))
 
-  ;(global as any).fileWatcher = watcher
+    ; (global as any).fileWatcher = watcher
 }
 
 // 注册所有 IPC Handlers
 export function registerSecureFileHandlers(
   getMainWindowFn: () => any,
   store: any,
-  getWorkspaceFn: () => string | null
+  getWorkspaceSessionFn: () => { roots: string[] } | null
 ) {
-  ;(global as any).mainWindow = getMainWindowFn()
+  ; (global as any).mainWindow = getMainWindowFn()
   if (store) {
     const storeNew = new Store({ name: 'main' })
     storeNew.set('lastWorkspacePath', store.get('lastWorkspacePath'))
@@ -145,8 +145,118 @@ export function registerSecureFileHandlers(
     })
 
     if (!result.canceled && result.filePaths[0]) {
+      const folderPath = result.filePaths[0]
+      // Update legacy store
+      const store = new Store({ name: 'main' })
+      store.set('lastWorkspacePath', folderPath)
+      // Update new store
+      store.set('lastWorkspaceSession', { configPath: null, roots: [folderPath] })
+      return folderPath
+    }
+    return null
+  })
+
+  // 打开工作区 (多根支持)
+  ipcMain.handle('workspace:open', async () => {
+    const mainWindow = getMainWindowFn()
+    if (!mainWindow) return null
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openFile', 'openDirectory'],
+      filters: [
+        { name: 'Adnify Workspace', extensions: ['adnify-workspace'] },
+        { name: 'All Files', extensions: ['*'] }
+      ]
+    })
+
+    if (!result.canceled && result.filePaths[0]) {
+      const targetPath = result.filePaths[0]
+      const store = new Store({ name: 'main' })
+
+      // Check if it's a workspace file
+      if (targetPath.endsWith('.adnify-workspace')) {
+        try {
+          const content = await fsPromises.readFile(targetPath, 'utf-8')
+          const config = JSON.parse(content)
+          const roots = config.folders.map((f: any) => f.path)
+          const session = { configPath: targetPath, roots }
+
+          store.set('lastWorkspaceSession', session)
+          store.set('lastWorkspacePath', roots[0]) // Legacy fallback
+          return session
+        } catch (e) {
+          console.error('Failed to parse workspace file', e)
+          return null
+        }
+      } else {
+        // It's a folder
+        const session = { configPath: null, roots: [targetPath] }
+        store.set('lastWorkspaceSession', session)
+        store.set('lastWorkspacePath', targetPath)
+        return session
+      }
+    }
+    return null
+  })
+
+  // 添加文件夹到工作区
+  ipcMain.handle('workspace:addFolder', async () => {
+    const mainWindow = getMainWindowFn()
+    if (!mainWindow) return null
+
+    const result = await dialog.showOpenDialog(mainWindow, {
+      properties: ['openDirectory']
+    })
+
+    if (!result.canceled && result.filePaths[0]) {
       return result.filePaths[0]
     }
+    return null
+  })
+
+  // 保存工作区
+  ipcMain.handle('workspace:save', async (_, configPath: string, roots: string[]) => {
+    if (!configPath || !roots) return false
+
+    // If no config path, ask user to save
+    let targetPath = configPath
+    if (!targetPath) {
+      const mainWindow = getMainWindowFn()
+      const result = await dialog.showSaveDialog(mainWindow!, {
+        filters: [{ name: 'Adnify Workspace', extensions: ['adnify-workspace'] }]
+      })
+      if (result.canceled || !result.filePath) return false
+      targetPath = result.filePath
+    }
+
+    const content = JSON.stringify({
+      folders: roots.map(path => ({ path }))
+    }, null, 2)
+
+    try {
+      await fsPromises.writeFile(targetPath, content, 'utf-8')
+      return true
+    } catch (e) {
+      console.error('Failed to save workspace', e)
+      return false
+    }
+  })
+
+  // 恢复工作区
+  ipcMain.handle('workspace:restore', async () => {
+    const store = new Store({ name: 'main' })
+    const session = store.get('lastWorkspaceSession') as { configPath: string | null; roots: string[] } | null
+
+    if (session) {
+      return session
+    }
+
+    // Fallback to legacy
+    const legacyPath = store.get('lastWorkspacePath') as string | null
+    if (legacyPath) {
+      return { configPath: null, roots: [legacyPath] }
+    }
+
     return null
   })
 
@@ -198,6 +308,16 @@ export function registerSecureFileHandlers(
   // 读取文件 - 无弹窗
   ipcMain.handle('file:read', async (_, filePath: string) => {
     if (!filePath) return null
+    const workspace = getWorkspaceSessionFn()
+
+    // 强制工作区边界
+    if (workspace && !securityManager.validateWorkspacePath(filePath, workspace.roots)) {
+      securityManager.logOperation(OperationType.FILE_READ, filePath, false, {
+        reason: '安全底线：超出工作区边界',
+      })
+      return null
+    }
+
     if (securityManager.isSensitivePath(filePath)) {
       securityManager.logOperation(OperationType.FILE_READ, filePath, false, {
         reason: '安全底线：敏感路径',
@@ -226,6 +346,16 @@ export function registerSecureFileHandlers(
   ipcMain.handle('file:write', async (_, filePath: string, content: string) => {
     if (!filePath || typeof filePath !== 'string') return false
     if (content === undefined || content === null) return false
+
+    const workspace = getWorkspaceSessionFn()
+
+    // 强制工作区边界
+    if (workspace && !securityManager.validateWorkspacePath(filePath, workspace.roots)) {
+      securityManager.logOperation(OperationType.FILE_WRITE, filePath, false, {
+        reason: '安全底线：超出工作区边界',
+      })
+      return false
+    }
 
     // 底线：敏感路径
     if (securityManager.isSensitivePath(filePath)) {
@@ -297,8 +427,8 @@ export function registerSecureFileHandlers(
     const mainWindow = getMainWindowFn()
     if (!mainWindow) return null
 
-    const workspace = getWorkspace()
-    const defaultPath = workspace || require('os').homedir()
+    const workspace = getWorkspaceSessionFn()
+    const defaultPath = (workspace && workspace.roots.length > 0) ? workspace.roots[0] : require('os').homedir()
 
     const result = await dialog.showSaveDialog(mainWindow, {
       defaultPath,

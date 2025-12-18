@@ -1,12 +1,10 @@
 /**
  * 安全的 Preload Script
- * 移除了高危的 executeCommand API
- * 所有文件操作都会经过安全验证
  */
 
 import { contextBridge, ipcRenderer, IpcRendererEvent } from 'electron'
 
-// =================== 类型定义保持不变（与旧版本兼容） ===================
+// =================== 类型定义 ===================
 
 interface SearchFilesOptions {
   isRegex: boolean
@@ -126,8 +124,6 @@ interface EmbeddingProvider {
   free: boolean
 }
 
-// =================== 安全的 API 类型定义 ===================
-
 export interface ElectronAPI {
   // App lifecycle
   appReady: () => void
@@ -136,11 +132,15 @@ export interface ElectronAPI {
   minimize: () => void
   maximize: () => void
   close: () => void
+  newWindow: () => void
 
-  // File operations (安全 - 强制工作区边界)
+  // File operations
   openFile: () => Promise<{ path: string; content: string } | null>
   openFolder: () => Promise<string | null>
-  restoreWorkspace: () => Promise<string | null>
+  openWorkspace: () => Promise<{ configPath: string | null; roots: string[] } | null>
+  addFolderToWorkspace: () => Promise<string | null>
+  saveWorkspace: (configPath: string, roots: string[]) => Promise<boolean>
+  restoreWorkspace: () => Promise<{ configPath: string | null; roots: string[] } | null>
   readDir: (path: string) => Promise<{ name: string; path: string; isDirectory: boolean }[]>
   getFileTree: (path: string, maxDepth?: number) => Promise<string>
   readFile: (path: string) => Promise<string | null>
@@ -152,13 +152,14 @@ export interface ElectronAPI {
   mkdir: (path: string) => Promise<boolean>
   deleteFile: (path: string) => Promise<boolean>
   renameFile: (oldPath: string, newPath: string) => Promise<boolean>
-  searchFiles: (query: string, rootPath: string, options?: SearchFilesOptions) => Promise<SearchFileResult[]>
+  searchFiles: (query: string, rootPath: string | string[], options?: SearchFilesOptions) => Promise<SearchFileResult[]>
 
   // Settings
   getSetting: (key: string) => Promise<unknown>
   setSetting: (key: string, value: unknown) => Promise<boolean>
   getDataPath: () => Promise<string>
   setDataPath: (path: string) => Promise<boolean>
+  onSettingsChanged: (callback: (event: { key: string; value: unknown }) => void) => () => void
 
   // LLM
   sendMessage: (params: LLMSendMessageParams) => Promise<void>
@@ -168,7 +169,7 @@ export interface ElectronAPI {
   onLLMError: (callback: (error: LLMError) => void) => () => void
   onLLMDone: (callback: (data: LLMResult) => void) => () => void
 
-  // Interactive Terminal (安全 - 交互式终端，用户可控)
+  // Interactive Terminal
   createTerminal: (options: { id: string; cwd?: string; shell?: string }) => Promise<boolean>
   writeTerminal: (id: string, data: string) => Promise<void>
   resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>
@@ -176,7 +177,7 @@ export interface ElectronAPI {
   getAvailableShells: () => Promise<{ label: string; path: string }[]>
   onTerminalData: (callback: (event: { id: string; data: string }) => void) => () => void
 
-  // Secure Shell Execution (新增 - 受限的白名单命令执行)
+  // Secure Shell Execution
   executeSecureCommand: (request: {
     command: string
     args?: string[]
@@ -191,7 +192,7 @@ export interface ElectronAPI {
     error?: string
   }>
 
-  // Secure Git Execution (新增 - 安全的 Git 执行，移除 exec 拼接)
+  // Secure Git Execution
   gitExecSecure: (args: string[], cwd: string) => Promise<{
     success: boolean
     stdout?: string
@@ -200,16 +201,13 @@ export interface ElectronAPI {
     error?: string
   }>
 
-  // Security Management (新增 - 安全审计和权限管理)
+  // Security Management
   getAuditLogs: (limit?: number) => Promise<any[]>
   getPermissions: () => Promise<Record<string, string>>
   resetPermissions: () => Promise<boolean>
 
   // File watcher
-  onFileChanged: (callback: (event: {
-    event: 'create' | 'update' | 'delete'
-    path: string
-  }) => void) => () => void
+  onFileChanged: (callback: (event: { event: 'create' | 'update' | 'delete'; path: string }) => void) => () => void
 
   // Codebase Indexing
   indexInitialize: (workspacePath: string) => Promise<{ success: boolean; error?: string }>
@@ -224,54 +222,48 @@ export interface ElectronAPI {
   indexGetProviders: () => Promise<EmbeddingProvider[]>
   onIndexProgress: (callback: (status: IndexStatusData) => void) => () => void
 
-  // LSP (Language Server Protocol)
+  // LSP
   lspStart: (workspacePath: string) => Promise<{ success: boolean }>
   lspStop: () => Promise<{ success: boolean }>
-  lspDidOpen: (params: { uri: string; languageId: string; version: number; text: string }) => Promise<void>
-  lspDidChange: (params: { uri: string; version: number; text: string }) => Promise<void>
-  lspDidClose: (params: { uri: string }) => Promise<void>
-  lspDefinition: (params: { uri: string; line: number; character: number }) => Promise<any>
-  lspTypeDefinition: (params: { uri: string; line: number; character: number }) => Promise<any>
-  lspImplementation: (params: { uri: string; line: number; character: number }) => Promise<any>
-  lspReferences: (params: { uri: string; line: number; character: number }) => Promise<any>
-  lspHover: (params: { uri: string; line: number; character: number }) => Promise<any>
-  lspCompletion: (params: { uri: string; line: number; character: number }) => Promise<any>
+  lspDidOpen: (params: { uri: string; languageId: string; version: number; text: string; workspacePath?: string | null }) => Promise<void>
+  lspDidChange: (params: { uri: string; version: number; text: string; workspacePath?: string | null }) => Promise<void>
+  lspDidClose: (params: { uri: string; workspacePath?: string | null }) => Promise<void>
+  lspDefinition: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
+  lspTypeDefinition: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
+  lspImplementation: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
+  lspReferences: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
+  lspHover: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
+  lspCompletion: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
   lspCompletionResolve: (item: any) => Promise<any>
-  lspSignatureHelp: (params: { uri: string; line: number; character: number }) => Promise<any>
-  lspRename: (params: { uri: string; line: number; character: number; newName: string }) => Promise<any>
-  lspPrepareRename: (params: { uri: string; line: number; character: number }) => Promise<any>
-  lspDocumentSymbol: (params: { uri: string }) => Promise<any>
+  lspSignatureHelp: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
+  lspRename: (params: { uri: string; line: number; character: number; newName: string; workspacePath?: string | null }) => Promise<any>
+  lspPrepareRename: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
+  lspDocumentSymbol: (params: { uri: string; workspacePath?: string | null }) => Promise<any>
   lspWorkspaceSymbol: (params: { query: string }) => Promise<any>
-  lspCodeAction: (params: { uri: string; range: any; diagnostics?: any[] }) => Promise<any>
-  lspFormatting: (params: { uri: string; options?: any }) => Promise<any>
-  lspRangeFormatting: (params: { uri: string; range: any; options?: any }) => Promise<any>
-  lspDocumentHighlight: (params: { uri: string; line: number; character: number }) => Promise<any>
-  lspFoldingRange: (params: { uri: string }) => Promise<any>
-  lspInlayHint: (params: { uri: string; range: any }) => Promise<any>
+  lspCodeAction: (params: { uri: string; range: any; diagnostics?: any[]; workspacePath?: string | null }) => Promise<any>
+  lspFormatting: (params: { uri: string; options?: any; workspacePath?: string | null }) => Promise<any>
+  lspRangeFormatting: (params: { uri: string; range: any; options?: any; workspacePath?: string | null }) => Promise<any>
+  lspDocumentHighlight: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
+  lspFoldingRange: (params: { uri: string; workspacePath?: string | null }) => Promise<any>
+  lspInlayHint: (params: { uri: string; range: any; workspacePath?: string | null }) => Promise<any>
   getLspDiagnostics: (filePath: string) => Promise<any[]>
   onLspDiagnostics: (callback: (params: { uri: string; diagnostics: any[] }) => void) => () => void
 }
 
-// =================== 暴露安全的 API ===================
+// =================== 暴露 API ===================
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // App lifecycle
   appReady: () => ipcRenderer.send('app:ready'),
-
-  // Window controls
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
+  newWindow: () => ipcRenderer.invoke('window:new'),
 
-  // File operations (安全 - 使用新处理器)
   openFile: () => ipcRenderer.invoke('file:open'),
   openFolder: () => ipcRenderer.invoke('file:openFolder'),
-  showOpenDialog: (options: { properties?: string[]; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) =>
-    ipcRenderer.invoke('dialog:showOpen', options),
-
-  // Git operations (安全 - 使用新的 secure Git handler)
-  gitExecSecure: (args: string[], cwd: string) => ipcRenderer.invoke('git:execSecure', args, cwd),
-
+  openWorkspace: () => ipcRenderer.invoke('workspace:open'),
+  addFolderToWorkspace: () => ipcRenderer.invoke('workspace:addFolder'),
+  saveWorkspace: (configPath: string, roots: string[]) => ipcRenderer.invoke('workspace:save', configPath, roots),
   restoreWorkspace: () => ipcRenderer.invoke('workspace:restore'),
   readDir: (path: string) => ipcRenderer.invoke('file:readDir', path),
   getFileTree: (path: string, maxDepth?: number) => ipcRenderer.invoke('file:getTree', path, maxDepth),
@@ -284,44 +276,42 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mkdir: (path: string) => ipcRenderer.invoke('file:mkdir', path),
   deleteFile: (path: string) => ipcRenderer.invoke('file:delete', path),
   renameFile: (oldPath: string, newPath: string) => ipcRenderer.invoke('file:rename', oldPath, newPath),
-  searchFiles: (query: string, rootPath: string, options?: SearchFilesOptions) =>
+  searchFiles: (query: string, rootPath: string | string[], options?: SearchFilesOptions) =>
     ipcRenderer.invoke('file:search', query, rootPath, options),
 
-  // Settings
   getSetting: (key: string) => ipcRenderer.invoke('settings:get', key),
   setSetting: (key: string, value: unknown) => ipcRenderer.invoke('settings:set', key, value),
   getDataPath: () => ipcRenderer.invoke('settings:getDataPath'),
   setDataPath: (path: string) => ipcRenderer.invoke('settings:setDataPath', path),
+  onSettingsChanged: (callback: (event: { key: string; value: unknown }) => void) => {
+    const handler = (_: IpcRendererEvent, event: { key: string; value: unknown }) => callback(event)
+    ipcRenderer.on('settings:changed', handler)
+    return () => ipcRenderer.removeListener('settings:changed', handler)
+  },
 
-  // LLM
   sendMessage: (params: LLMSendMessageParams) => ipcRenderer.invoke('llm:sendMessage', params),
   abortMessage: () => ipcRenderer.send('llm:abort'),
-
   onLLMStream: (callback: (data: LLMStreamChunk) => void) => {
     const handler = (_: IpcRendererEvent, data: LLMStreamChunk) => callback(data)
     ipcRenderer.on('llm:stream', handler)
     return () => ipcRenderer.removeListener('llm:stream', handler)
   },
-
   onLLMToolCall: (callback: (toolCall: LLMToolCall) => void) => {
     const handler = (_: IpcRendererEvent, toolCall: LLMToolCall) => callback(toolCall)
     ipcRenderer.on('llm:toolCall', handler)
     return () => ipcRenderer.removeListener('llm:toolCall', handler)
   },
-
   onLLMError: (callback: (error: LLMError) => void) => {
     const handler = (_: IpcRendererEvent, error: LLMError) => callback(error)
     ipcRenderer.on('llm:error', handler)
     return () => ipcRenderer.removeListener('llm:error', handler)
   },
-
   onLLMDone: (callback: (data: LLMResult) => void) => {
     const handler = (_: IpcRendererEvent, data: LLMResult) => callback(data)
     ipcRenderer.on('llm:done', handler)
     return () => ipcRenderer.removeListener('llm:done', handler)
   },
 
-  // Interactive Terminal (仍然使用原交互式终端，这是安全的)
   createTerminal: (options: { id: string; cwd?: string; shell?: string }) =>
     ipcRenderer.invoke('terminal:interactive', options),
   writeTerminal: (id: string, data: string) => ipcRenderer.invoke('terminal:input', { id, data }),
@@ -329,52 +319,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('terminal:resize', { id, cols, rows }),
   killTerminal: (id?: string) => ipcRenderer.send('terminal:kill', id),
   getAvailableShells: () => ipcRenderer.invoke('shell:getAvailableShells'),
-
-  // 新增：安全部的命令执行（白名单）
-  executeSecureCommand: (request: {
-    command: string
-    args?: string[]
-    cwd?: string
-    timeout?: number
-    requireConfirm?: boolean
-  }) => ipcRenderer.invoke('shell:executeSecure', request),
-
-  // 新增：安全审计和权限管理
-  getAuditLogs: (limit = 100) => ipcRenderer.invoke('security:getAuditLogs', limit),
-  getPermissions: () => ipcRenderer.invoke('security:getPermissions'),
-  resetPermissions: () => ipcRenderer.invoke('security:resetPermissions'),
-
-  // Terminal data listener (保持原样)
   onTerminalData: (callback: (event: { id: string; data: string }) => void) => {
     const handler = (_: IpcRendererEvent, event: { id: string; data: string }) => callback(event)
     ipcRenderer.on('terminal:data', handler)
     return () => ipcRenderer.removeListener('terminal:data', handler)
   },
 
-  // File watcher events
+  executeSecureCommand: (request: { command: string; args?: string[]; cwd?: string; timeout?: number; requireConfirm?: boolean }) =>
+    ipcRenderer.invoke('shell:executeSecure', request),
+
+  gitExecSecure: (args: string[], cwd: string) => ipcRenderer.invoke('git:execSecure', args, cwd),
+
+  getAuditLogs: (limit = 100) => ipcRenderer.invoke('security:getAuditLogs', limit),
+  getPermissions: () => ipcRenderer.invoke('security:getPermissions'),
+  resetPermissions: () => ipcRenderer.invoke('security:resetPermissions'),
+
   onFileChanged: (callback: (event: { event: 'create' | 'update' | 'delete'; path: string }) => void) => {
-    const handler = (_: IpcRendererEvent, data: {
-      event: 'create' | 'update' | 'delete'
-      path: string
-    }) => callback(data)
+    const handler = (_: IpcRendererEvent, data: { event: 'create' | 'update' | 'delete'; path: string }) => callback(data)
     ipcRenderer.on('file:changed', handler)
     return () => ipcRenderer.removeListener('file:changed', handler)
   },
 
-  // Codebase Indexing
   indexInitialize: (workspacePath: string) => ipcRenderer.invoke('index:initialize', workspacePath),
   indexStart: (workspacePath: string) => ipcRenderer.invoke('index:start', workspacePath),
   indexStatus: (workspacePath: string) => ipcRenderer.invoke('index:status', workspacePath),
   indexHasIndex: (workspacePath: string) => ipcRenderer.invoke('index:hasIndex', workspacePath),
-  indexSearch: (workspacePath: string, query: string, topK?: number) =>
-    ipcRenderer.invoke('index:search', workspacePath, query, topK),
-  indexUpdateFile: (workspacePath: string, filePath: string) =>
-    ipcRenderer.invoke('index:updateFile', workspacePath, filePath),
+  indexSearch: (workspacePath: string, query: string, topK?: number) => ipcRenderer.invoke('index:search', workspacePath, query, topK),
+  indexUpdateFile: (workspacePath: string, filePath: string) => ipcRenderer.invoke('index:updateFile', workspacePath, filePath),
   indexClear: (workspacePath: string) => ipcRenderer.invoke('index:clear', workspacePath),
-  indexUpdateEmbeddingConfig: (workspacePath: string, config: EmbeddingConfigInput) =>
-    ipcRenderer.invoke('index:updateEmbeddingConfig', workspacePath, config),
-  indexTestConnection: (workspacePath: string) =>
-    ipcRenderer.invoke('index:testConnection', workspacePath),
+  indexUpdateEmbeddingConfig: (workspacePath: string, config: EmbeddingConfigInput) => ipcRenderer.invoke('index:updateEmbeddingConfig', workspacePath, config),
+  indexTestConnection: (workspacePath: string) => ipcRenderer.invoke('index:testConnection', workspacePath),
   indexGetProviders: () => ipcRenderer.invoke('index:getProviders'),
   onIndexProgress: (callback: (status: IndexStatusData) => void) => {
     const handler = (_: IpcRendererEvent, status: IndexStatusData) => callback(status)
@@ -382,56 +356,33 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('index:progress', handler)
   },
 
-  // LSP (Language Server Protocol)
   lspStart: (workspacePath: string) => ipcRenderer.invoke('lsp:start', workspacePath),
   lspStop: () => ipcRenderer.invoke('lsp:stop'),
-  lspDidOpen: (params: { uri: string; languageId: string; version: number; text: string }) =>
-    ipcRenderer.invoke('lsp:didOpen', params),
-  lspDidChange: (params: { uri: string; version: number; text: string }) =>
-    ipcRenderer.invoke('lsp:didChange', params),
-  lspDidClose: (params: { uri: string }) =>
-    ipcRenderer.invoke('lsp:didClose', params),
-  lspDefinition: (params: { uri: string; line: number; character: number }) =>
-    ipcRenderer.invoke('lsp:definition', params),
-  lspTypeDefinition: (params: { uri: string; line: number; character: number }) =>
-    ipcRenderer.invoke('lsp:typeDefinition', params),
-  lspImplementation: (params: { uri: string; line: number; character: number }) =>
-    ipcRenderer.invoke('lsp:implementation', params),
-  lspReferences: (params: { uri: string; line: number; character: number }) =>
-    ipcRenderer.invoke('lsp:references', params),
-  lspHover: (params: { uri: string; line: number; character: number }) =>
-    ipcRenderer.invoke('lsp:hover', params),
-  lspCompletion: (params: { uri: string; line: number; character: number }) =>
-    ipcRenderer.invoke('lsp:completion', params),
-  lspCompletionResolve: (item: any) =>
-    ipcRenderer.invoke('lsp:completionResolve', item),
-  lspSignatureHelp: (params: { uri: string; line: number; character: number }) =>
-    ipcRenderer.invoke('lsp:signatureHelp', params),
-  lspRename: (params: { uri: string; line: number; character: number; newName: string }) =>
-    ipcRenderer.invoke('lsp:rename', params),
-  lspPrepareRename: (params: { uri: string; line: number; character: number }) =>
-    ipcRenderer.invoke('lsp:prepareRename', params),
-  lspDocumentSymbol: (params: { uri: string }) =>
-    ipcRenderer.invoke('lsp:documentSymbol', params),
-  lspWorkspaceSymbol: (params: { query: string }) =>
-    ipcRenderer.invoke('lsp:workspaceSymbol', params),
-  lspCodeAction: (params: { uri: string; range: any; diagnostics?: any[] }) =>
-    ipcRenderer.invoke('lsp:codeAction', params),
-  lspFormatting: (params: { uri: string; options?: any }) =>
-    ipcRenderer.invoke('lsp:formatting', params),
-  lspRangeFormatting: (params: { uri: string; range: any; options?: any }) =>
-    ipcRenderer.invoke('lsp:rangeFormatting', params),
-  lspDocumentHighlight: (params: { uri: string; line: number; character: number }) =>
-    ipcRenderer.invoke('lsp:documentHighlight', params),
-  lspFoldingRange: (params: { uri: string }) =>
-    ipcRenderer.invoke('lsp:foldingRange', params),
-  lspInlayHint: (params: { uri: string; range: any }) =>
-    ipcRenderer.invoke('lsp:inlayHint', params),
-  getLspDiagnostics: (filePath: string) =>
-    ipcRenderer.invoke('lsp:getDiagnostics', filePath),
+  lspDidOpen: (params: any) => ipcRenderer.invoke('lsp:didOpen', params),
+  lspDidChange: (params: any) => ipcRenderer.invoke('lsp:didChange', params),
+  lspDidClose: (params: any) => ipcRenderer.invoke('lsp:didClose', params),
+  lspDefinition: (params: any) => ipcRenderer.invoke('lsp:definition', params),
+  lspTypeDefinition: (params: any) => ipcRenderer.invoke('lsp:typeDefinition', params),
+  lspImplementation: (params: any) => ipcRenderer.invoke('lsp:implementation', params),
+  lspReferences: (params: any) => ipcRenderer.invoke('lsp:references', params),
+  lspHover: (params: any) => ipcRenderer.invoke('lsp:hover', params),
+  lspCompletion: (params: any) => ipcRenderer.invoke('lsp:completion', params),
+  lspCompletionResolve: (item: any) => ipcRenderer.invoke('lsp:completionResolve', item),
+  lspSignatureHelp: (params: any) => ipcRenderer.invoke('lsp:signatureHelp', params),
+  lspRename: (params: any) => ipcRenderer.invoke('lsp:rename', params),
+  lspPrepareRename: (params: any) => ipcRenderer.invoke('lsp:prepareRename', params),
+  lspDocumentSymbol: (params: any) => ipcRenderer.invoke('lsp:documentSymbol', params),
+  lspWorkspaceSymbol: (params: any) => ipcRenderer.invoke('lsp:workspaceSymbol', params),
+  lspCodeAction: (params: any) => ipcRenderer.invoke('lsp:codeAction', params),
+  lspFormatting: (params: any) => ipcRenderer.invoke('lsp:formatting', params),
+  lspRangeFormatting: (params: any) => ipcRenderer.invoke('lsp:rangeFormatting', params),
+  lspDocumentHighlight: (params: any) => ipcRenderer.invoke('lsp:documentHighlight', params),
+  lspFoldingRange: (params: any) => ipcRenderer.invoke('lsp:foldingRange', params),
+  lspInlayHint: (params: any) => ipcRenderer.invoke('lsp:inlayHint', params),
+  getLspDiagnostics: (filePath: string) => ipcRenderer.invoke('lsp:getDiagnostics', filePath),
   onLspDiagnostics: (callback: (params: { uri: string; diagnostics: any[] }) => void) => {
     const handler = (_: IpcRendererEvent, params: { uri: string; diagnostics: any[] }) => callback(params)
     ipcRenderer.on('lsp:diagnostics', handler)
     return () => ipcRenderer.removeListener('lsp:diagnostics', handler)
   },
-} as ElectronAPI)
+})

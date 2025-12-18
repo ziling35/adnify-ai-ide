@@ -7,6 +7,12 @@ export interface FileItem {
   name: string
   path: string
   isDirectory: boolean
+  isRoot?: boolean
+}
+
+export interface WorkspaceConfig {
+  configPath: string | null
+  roots: string[]
 }
 
 /** 大文件信息 */
@@ -30,7 +36,8 @@ export interface OpenFile {
 }
 
 export interface FileSlice {
-  workspacePath: string | null
+  workspace: WorkspaceConfig | null
+  workspacePath: string | null // Legacy: returns first root or null
   files: FileItem[]
   expandedFolders: Set<string>
   openFiles: OpenFile[]
@@ -38,7 +45,10 @@ export interface FileSlice {
   /** 当前选中的文件夹路径（用于在指定位置创建文件） */
   selectedFolderPath: string | null
 
-  setWorkspacePath: (path: string | null) => void
+  setWorkspace: (workspace: WorkspaceConfig | null) => void
+  setWorkspacePath: (path: string | null) => void // Deprecated wrapper
+  addRoot: (path: string) => void
+  removeRoot: (path: string) => void
   setFiles: (files: FileItem[]) => void
   toggleFolder: (path: string) => void
   setSelectedFolder: (path: string | null) => void
@@ -54,6 +64,7 @@ export interface FileSlice {
 }
 
 export const createFileSlice: StateCreator<FileSlice, [], [], FileSlice> = (set) => ({
+  workspace: null,
   workspacePath: null,
   files: [],
   expandedFolders: new Set(),
@@ -61,7 +72,35 @@ export const createFileSlice: StateCreator<FileSlice, [], [], FileSlice> = (set)
   activeFilePath: null,
   selectedFolderPath: null,
 
-  setWorkspacePath: (path) => set({ workspacePath: path }),
+  setWorkspace: (workspace) => set({
+    workspace,
+    workspacePath: workspace?.roots[0] || null
+  }),
+  setWorkspacePath: (path) => set({
+    workspacePath: path,
+    workspace: path ? { configPath: null, roots: [path] } : null
+  }),
+  addRoot: (path) => set((state) => {
+    if (!state.workspace) return { workspace: { configPath: null, roots: [path] }, workspacePath: path }
+    if (state.workspace.roots.includes(path)) return {}
+    return {
+      workspace: {
+        ...state.workspace,
+        roots: [...state.workspace.roots, path]
+      }
+    }
+  }),
+  removeRoot: (path) => set((state) => {
+    if (!state.workspace) return {}
+    const newRoots = state.workspace.roots.filter(r => r !== path)
+    return {
+      workspace: {
+        ...state.workspace,
+        roots: newRoots
+      },
+      workspacePath: newRoots[0] || null
+    }
+  }),
   setFiles: (files) => set({ files }),
   setSelectedFolder: (path) => set({ selectedFolderPath: path }),
   expandFolder: (path) =>
@@ -86,9 +125,9 @@ export const createFileSlice: StateCreator<FileSlice, [], [], FileSlice> = (set)
       const existing = state.openFiles.find((f) => f.path === path)
       if (existing) {
         const updatedFiles = state.openFiles.map((f) =>
-          f.path === path ? { 
-            ...f, 
-            content, 
+          f.path === path ? {
+            ...f,
+            content,
             originalContent,
             largeFileInfo: options?.largeFileInfo,
             encoding: options?.encoding,
@@ -97,10 +136,10 @@ export const createFileSlice: StateCreator<FileSlice, [], [], FileSlice> = (set)
         return { activeFilePath: path, openFiles: updatedFiles }
       }
       return {
-        openFiles: [...state.openFiles, { 
-          path, 
-          content, 
-          isDirty: false, 
+        openFiles: [...state.openFiles, {
+          path,
+          content,
+          isDirty: false,
           originalContent,
           largeFileInfo: options?.largeFileInfo,
           encoding: options?.encoding,

@@ -18,10 +18,7 @@ import { onDiagnostics, getDocumentSymbols } from '../services/lspService'
 import { adnifyDir } from '../services/adnifyDirService'
 import { ContextMenu, ContextMenuItem } from './ContextMenu'
 import { directoryCacheService } from '../services/directoryCacheService'
-import { VirtualFileTree } from './VirtualFileTree'
 import { keybindingService } from '../services/keybindingService'
-
-// 超过此数量的文件时启用虚拟滚动
 const VIRTUAL_SCROLL_THRESHOLD = 100
 
 const getFileIcon = (name: string) => {
@@ -375,7 +372,7 @@ function FileTreeItem({
 }
 
 function ExplorerView() {
-    const { workspacePath, files, setWorkspacePath, setFiles, language } = useStore()
+    const { workspacePath, workspace, files, setWorkspacePath, setFiles, language } = useStore()
     const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
     const [isGitRepo, setIsGitRepo] = useState(false)
     // 内联创建状态：记录在哪个文件夹创建什么类型
@@ -482,6 +479,17 @@ function ExplorerView() {
         }
     }
 
+    const handleAddFolder = async () => {
+        const path = await window.electronAPI.addFolderToWorkspace()
+        if (path) {
+            const { addRoot } = useStore.getState()
+            addRoot(path)
+            // 初始化新根目录的 .adnify
+            await adnifyDir.initialize(path)
+            toast.success(`Added ${path} to workspace`)
+        }
+    }
+
     // 开始在指定文件夹创建
     const handleStartCreate = useCallback((path: string, type: 'file' | 'folder') => {
         setCreatingIn({ path, type })
@@ -554,6 +562,9 @@ function ExplorerView() {
                     <button onClick={handleOpenFolder} className="p-1 hover:bg-surface-active rounded transition-colors" title={t('openFolder', language)}>
                         <FolderOpen className="w-3.5 h-3.5 text-text-muted hover:text-text-primary" />
                     </button>
+                    <button onClick={handleAddFolder} className="p-1 hover:bg-surface-active rounded transition-colors" title="Add Folder to Workspace">
+                        <FolderPlus className="w-3.5 h-3.5 text-text-muted hover:text-text-primary" />
+                    </button>
                 </div>
             </div>
 
@@ -561,47 +572,26 @@ function ExplorerView() {
                 className="flex-1 overflow-hidden flex flex-col"
                 onContextMenu={handleRootContextMenu}
             >
-                {workspacePath ? (
-                    files.length > VIRTUAL_SCROLL_THRESHOLD ? (
-                        // 大目录使用虚拟滚动
-                        <VirtualFileTree
-                            items={files}
-                            onRefresh={refreshFiles}
-                            creatingIn={creatingIn}
-                            onStartCreate={handleStartCreate}
-                            onCancelCreate={handleCancelCreate}
-                            onCreateSubmit={handleCreateSubmit}
-                        />
-                    ) : (
-                        // 小目录使用普通渲染
-                        <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar py-1">
-                            {/* 根目录内联创建 */}
-                            {creatingIn?.path === workspacePath && (
-                                <InlineCreateInput
-                                    type={creatingIn.type}
-                                    depth={0}
-                                    onSubmit={(name) => handleCreateSubmit(workspacePath, name, creatingIn.type)}
-                                    onCancel={handleCancelCreate}
-                                />
-                            )}
-                            {files
-                                .sort((a: FileItem, b: FileItem) => {
-                                    if (a.isDirectory === b.isDirectory) return a.name.localeCompare(b.name)
-                                    return a.isDirectory ? -1 : 1
-                                })
-                                .map((item: FileItem) => (
-                                    <FileTreeItem
-                                        key={item.path}
-                                        item={item}
-                                        onRefresh={refreshFiles}
-                                        creatingIn={creatingIn}
-                                        onStartCreate={handleStartCreate}
-                                        onCancelCreate={handleCancelCreate}
-                                        onCreateSubmit={handleCreateSubmit}
-                                    />
-                                ))}
-                        </div>
-                    )
+                {workspace && workspace.roots.length > 0 ? (
+                    <div className="flex-1 overflow-y-auto overflow-x-hidden custom-scrollbar py-1">
+                        {workspace.roots.map((root) => (
+                            <FileTreeItem
+                                key={root}
+                                item={{
+                                    name: getFileName(root),
+                                    path: root,
+                                    isDirectory: true,
+                                    isRoot: true
+                                }}
+                                depth={0}
+                                onRefresh={refreshFiles}
+                                creatingIn={creatingIn}
+                                onStartCreate={handleStartCreate}
+                                onCancelCreate={handleCancelCreate}
+                                onCreateSubmit={handleCreateSubmit}
+                            />
+                        ))}
+                    </div>
                 ) : (
                     <div className="flex flex-col items-center justify-center h-full text-center px-6">
                         <div className="w-12 h-12 bg-surface-hover rounded-xl flex items-center justify-center mb-4 border border-white/5">
@@ -677,7 +667,7 @@ function SearchView() {
     })
     const [showHistory, setShowHistory] = useState(false)
 
-    const { workspacePath, openFile, setActiveFile, language, openFiles } = useStore()
+    const { workspacePath, workspace, openFile, setActiveFile, language, openFiles } = useStore()
 
     // 保存搜索历史
     const addToHistory = useCallback((searchQuery: string) => {
@@ -748,14 +738,17 @@ function SearchView() {
                     })
                 })
                 setSearchResults(results)
-            } else if (workspacePath) {
-                const results = await window.electronAPI.searchFiles(query, workspacePath, {
-                    isRegex,
-                    isCaseSensitive,
-                    isWholeWord,
-                    exclude: excludePattern
-                })
-                setSearchResults(results)
+            } else {
+                const roots = workspace?.roots || [workspacePath].filter(Boolean) as string[]
+                if (roots.length > 0) {
+                    const results = await window.electronAPI.searchFiles(query, roots, {
+                        isRegex,
+                        isCaseSensitive,
+                        isWholeWord,
+                        exclude: excludePattern
+                    })
+                    setSearchResults(results)
+                }
             }
         } finally {
             setIsSearching(false)
@@ -1201,7 +1194,7 @@ function GitView() {
 
     const handleCreateBranch = async () => {
         if (!newBranchName.trim()) return
-        const result = await gitService.createBranch(newBranchName, true)
+        const result = await gitService.createBranch(newBranchName)
         if (result.success) {
             setNewBranchName('')
             setShowNewBranch(false)
@@ -1223,7 +1216,7 @@ function GitView() {
     }
 
     const handleStashPop = async (index: number) => {
-        const result = await gitService.stashApply(index, true)
+        const result = await gitService.stashApply(index)
         if (result.success) {
             refreshStatus()
             toast.success('Stash applied')

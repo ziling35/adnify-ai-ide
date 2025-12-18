@@ -1,9 +1,6 @@
 /**
  * 内置 LSP 管理器
- * 
- * 支持的语言（全部内置，无需用户安装）:
- * - TypeScript/JavaScript: typescript-language-server (内置)
- * - HTML/CSS/JSON: vscode-langservers-extracted (内置)
+ * 支持多根目录工作区（为每个根目录启动独立的服务器实例）
  */
 
 import { spawn, ChildProcess } from 'child_process'
@@ -31,113 +28,48 @@ interface LspServerInstance {
   buffer: Buffer
   contentLength: number
   initialized: boolean
-  workspacePath: string | null
+  workspacePath: string
 }
 
 // ============ 辅助函数 ============
 
-/**
- * 查找模块路径（支持开发和生产环境）
- */
 function findModulePath(moduleName: string, subPath: string): string | null {
   const possiblePaths = [
-    // 开发环境 - 项目 node_modules
     path.join(process.cwd(), 'node_modules', moduleName, subPath),
-    // 开发环境 - 相对于 __dirname
     path.join(__dirname, '..', '..', 'node_modules', moduleName, subPath),
-    // 生产环境 - app.asar
     path.join(app.getAppPath(), 'node_modules', moduleName, subPath),
-    // 生产环境 - resources
     path.join(process.resourcesPath || '', 'app.asar', 'node_modules', moduleName, subPath),
     path.join(process.resourcesPath || '', 'app', 'node_modules', moduleName, subPath),
   ]
 
   for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      return p
-    }
+    if (fs.existsSync(p)) return p
   }
   return null
 }
 
-/**
- * 获取 TypeScript 语言服务器命令
- */
 function getTypeScriptServerCommand(): { command: string; args: string[] } | null {
-  // 尝试找到 typescript-language-server
   const serverPath = findModulePath('typescript-language-server', 'lib/cli.mjs')
     || findModulePath('typescript-language-server', 'lib/cli.js')
-
-  if (serverPath) {
-    return { command: process.execPath, args: [serverPath, '--stdio'] }
-  }
-
-  console.error('[LSP] typescript-language-server not found')
+  if (serverPath) return { command: process.execPath, args: [serverPath, '--stdio'] }
   return null
 }
 
-/**
- * 获取 HTML 语言服务器命令
- */
 function getHtmlServerCommand(): { command: string; args: string[] } | null {
-  // 优先查找 .js 文件（跨平台兼容）
   const jsPath = findModulePath('vscode-langservers-extracted', 'bin/vscode-html-language-server.js')
-  if (jsPath) {
-    return { command: process.execPath, args: [jsPath, '--stdio'] }
-  }
-
-  const serverPath = findModulePath('vscode-langservers-extracted', 'bin/vscode-html-language-server')
-  if (serverPath) {
-    // Windows 上使用 node 执行
-    if (process.platform === 'win32') {
-      return { command: process.execPath, args: [serverPath, '--stdio'] }
-    }
-    return { command: serverPath, args: ['--stdio'] }
-  }
-
-  console.error('[LSP] vscode-html-language-server not found')
+  if (jsPath) return { command: process.execPath, args: [jsPath, '--stdio'] }
   return null
 }
 
-/**
- * 获取 CSS 语言服务器命令
- */
 function getCssServerCommand(): { command: string; args: string[] } | null {
   const jsPath = findModulePath('vscode-langservers-extracted', 'bin/vscode-css-language-server.js')
-  if (jsPath) {
-    return { command: process.execPath, args: [jsPath, '--stdio'] }
-  }
-
-  const serverPath = findModulePath('vscode-langservers-extracted', 'bin/vscode-css-language-server')
-  if (serverPath) {
-    if (process.platform === 'win32') {
-      return { command: process.execPath, args: [serverPath, '--stdio'] }
-    }
-    return { command: serverPath, args: ['--stdio'] }
-  }
-
-  console.error('[LSP] vscode-css-language-server not found')
+  if (jsPath) return { command: process.execPath, args: [jsPath, '--stdio'] }
   return null
 }
 
-/**
- * 获取 JSON 语言服务器命令
- */
 function getJsonServerCommand(): { command: string; args: string[] } | null {
   const jsPath = findModulePath('vscode-langservers-extracted', 'bin/vscode-json-language-server.js')
-  if (jsPath) {
-    return { command: process.execPath, args: [jsPath, '--stdio'] }
-  }
-
-  const serverPath = findModulePath('vscode-langservers-extracted', 'bin/vscode-json-language-server')
-  if (serverPath) {
-    if (process.platform === 'win32') {
-      return { command: process.execPath, args: [serverPath, '--stdio'] }
-    }
-    return { command: serverPath, args: ['--stdio'] }
-  }
-
-  console.error('[LSP] vscode-json-language-server not found')
+  if (jsPath) return { command: process.execPath, args: [jsPath, '--stdio'] }
   return null
 }
 
@@ -169,12 +101,11 @@ const LSP_SERVERS: LspServerConfig[] = [
 // ============ LSP 管理器 ============
 
 class LspManager {
-  private servers: Map<string, LspServerInstance> = new Map()
+  private servers: Map<string, LspServerInstance> = new Map() // key: serverName:workspacePath
   private languageToServer: Map<LanguageId, string> = new Map()
   private documentVersions: Map<string, number> = new Map()
   private diagnosticsCache: Map<string, any[]> = new Map()
   private startingServers: Set<string> = new Set()
-
 
   constructor() {
     for (const config of LSP_SERVERS) {
@@ -184,57 +115,42 @@ class LspManager {
     }
   }
 
-  /**
-   * 获取语言对应的服务器名称
-   */
+  private getInstanceKey(serverName: string, workspacePath: string): string {
+    return `${serverName}:${workspacePath.replace(/\\/g, '/')}`
+  }
+
   getServerForLanguage(languageId: LanguageId): string | undefined {
     return this.languageToServer.get(languageId)
   }
 
-  /**
-   * 启动服务器
-   */
   async startServer(serverName: string, workspacePath: string): Promise<boolean> {
-    const existing = this.servers.get(serverName)
-    if (existing?.process && existing.initialized && existing.workspacePath === workspacePath) {
-      return true
-    }
+    const key = this.getInstanceKey(serverName, workspacePath)
+    const existing = this.servers.get(key)
 
-    if (this.startingServers.has(serverName)) {
+    if (existing?.process && existing.initialized) return true
+
+    if (this.startingServers.has(key)) {
       await new Promise(resolve => setTimeout(resolve, 200))
-      return this.servers.get(serverName)?.initialized || false
-    }
-
-    if (existing?.process) {
-      await this.stopServer(serverName)
+      return this.servers.get(key)?.initialized || false
     }
 
     const config = LSP_SERVERS.find(c => c.name === serverName)
-    if (!config) {
-      console.error(`[LSP] Unknown server: ${serverName}`)
-      return false
-    }
+    if (!config) return false
 
-    this.startingServers.add(serverName)
+    this.startingServers.add(key)
     try {
       return await this.spawnServer(config, workspacePath)
     } finally {
-      this.startingServers.delete(serverName)
+      this.startingServers.delete(key)
     }
   }
 
-  /**
-   * 启动服务器进程
-   */
   private async spawnServer(config: LspServerConfig, workspacePath: string): Promise<boolean> {
     const cmdInfo = config.getCommand()
-    if (!cmdInfo) {
-      console.error(`[LSP] Cannot get command for ${config.name}`)
-      return false
-    }
+    if (!cmdInfo) return false
 
     const { command, args } = cmdInfo
-    console.log(`[LSP] Starting ${config.name}: ${command} ${args.join(' ')}`)
+    const key = this.getInstanceKey(config.name, workspacePath)
 
     const proc = spawn(command, args, {
       cwd: workspacePath,
@@ -242,10 +158,7 @@ class LspManager {
       stdio: ['pipe', 'pipe', 'pipe'],
     })
 
-    if (!proc.stdout || !proc.stdin) {
-      console.error(`[LSP] Failed to create pipes for ${config.name}`)
-      return false
-    }
+    if (!proc.stdout || !proc.stdin) return false
 
     const instance: LspServerInstance = {
       config,
@@ -258,73 +171,34 @@ class LspManager {
       workspacePath,
     }
 
-    this.servers.set(config.name, instance)
+    this.servers.set(key, instance)
 
-    proc.stdout.on('data', (data: Buffer) => {
-      this.handleServerOutput(config.name, data)
-    })
-
+    proc.stdout.on('data', (data: Buffer) => this.handleServerOutput(key, data))
     proc.stderr?.on('data', (data: Buffer) => {
       const msg = data.toString().trim()
-      if (msg && !msg.includes('Unexpected resource')) {
-        console.warn(`[LSP ${config.name}]`, msg)
-      }
+      if (msg && !msg.includes('Unexpected resource')) console.warn(`[LSP ${key}]`, msg)
     })
 
     proc.on('close', (code) => {
-      console.log(`[LSP ${config.name}] Closed with code: ${code}`)
-      const inst = this.servers.get(config.name)
-      if (inst) {
-        inst.process = null
-        inst.initialized = false
-      }
+      console.log(`[LSP ${key}] Closed with code: ${code}`)
+      this.servers.delete(key)
     })
 
-    proc.on('error', (err) => {
-      console.error(`[LSP ${config.name}] Error:`, err.message)
-      this.servers.delete(config.name)
-    })
-
-    // 监听 stdin 错误，防止 EPIPE 导致崩溃
-    proc.stdin.on('error', (err) => {
-      console.warn(`[LSP ${config.name}] stdin error:`, err.message)
-    })
-
-    // 等待进程 stdout 可用
-    await new Promise<void>((resolve, reject) => {
-      const timeout = setTimeout(() => reject(new Error('Process stdout not ready')), 5000)
-      if (proc.stdout?.readable) {
-        clearTimeout(timeout)
-        resolve()
-      } else {
-        proc.stdout?.once('readable', () => {
-          clearTimeout(timeout)
-          resolve()
-        })
-      }
-    }).catch(() => {
-      // 即使 stdout 检查失败也继续尝试初始化
-      console.warn(`[LSP ${config.name}] stdout ready check skipped`)
-    })
+    proc.stdin.on('error', (err) => console.warn(`[LSP ${key}] stdin error:`, err.message))
 
     try {
-      await this.initializeServer(config.name, workspacePath)
+      await this.initializeServer(key, workspacePath)
       instance.initialized = true
-
-      console.log(`[LSP ${config.name}] Initialized`)
       return true
     } catch (error: any) {
-      console.error(`[LSP ${config.name}] Init failed:`, error.message)
-      this.stopServer(config.name)
+      console.error(`[LSP ${key}] Init failed:`, error.message)
+      this.stopServerByKey(key)
       return false
     }
   }
 
-  /**
-   * 处理服务器输出（使用 Buffer 正确处理字节）
-   */
-  private handleServerOutput(serverName: string, data: Buffer): void {
-    const instance = this.servers.get(serverName)
+  private handleServerOutput(key: string, data: Buffer): void {
+    const instance = this.servers.get(key)
     if (!instance) return
 
     instance.buffer = Buffer.concat([instance.buffer, data])
@@ -345,47 +219,34 @@ class LspManager {
         }
       }
 
-      if (instance.contentLength === -1) return
-      if (instance.buffer.length < instance.contentLength) return
+      if (instance.contentLength === -1 || instance.buffer.length < instance.contentLength) return
 
       const message = instance.buffer.slice(0, instance.contentLength).toString('utf8')
       instance.buffer = instance.buffer.slice(instance.contentLength)
       instance.contentLength = -1
 
       try {
-        this.handleServerMessage(serverName, JSON.parse(message))
-      } catch {
-        // 忽略解析错误
-      }
+        this.handleServerMessage(key, JSON.parse(message))
+      } catch { }
     }
   }
 
-  /**
-   * 处理服务器消息
-   */
-  private handleServerMessage(serverName: string, message: any): void {
-    const instance = this.servers.get(serverName)
+  private handleServerMessage(key: string, message: any): void {
+    const instance = this.servers.get(key)
     if (!instance) return
 
     if (message.id !== undefined && instance.pendingRequests.has(message.id)) {
       const { resolve, reject, timeout } = instance.pendingRequests.get(message.id)!
       instance.pendingRequests.delete(message.id)
       clearTimeout(timeout)
-
-      if (message.error) {
-        reject(message.error)
-      } else {
-        resolve(message.result)
-      }
+      if (message.error) reject(message.error)
+      else resolve(message.result)
     } else if (message.method) {
-      this.handleNotification(serverName, message)
+      this.handleNotification(key, message)
     }
   }
 
-  /**
-   * 处理通知
-   */
-  private handleNotification(serverName: string, message: any): void {
+  private handleNotification(key: string, message: any): void {
     if (message.method === 'textDocument/publishDiagnostics') {
       const { uri, diagnostics } = message.params
       this.diagnosticsCache.set(uri, diagnostics)
@@ -393,23 +254,18 @@ class LspManager {
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
           try {
-            win.webContents.send('lsp:diagnostics', { ...message.params, serverName })
-          } catch (e) {
-            // 忽略窗口已销毁的错误
-          }
+            win.webContents.send('lsp:diagnostics', { ...message.params, serverKey: key })
+          } catch { }
         }
       })
     }
   }
 
-  /**
-   * 发送请求
-   */
-  sendRequest(serverName: string, method: string, params: any, timeoutMs = 30000): Promise<any> {
+  sendRequest(key: string, method: string, params: any, timeoutMs = 30000): Promise<any> {
     return new Promise((resolve, reject) => {
-      const instance = this.servers.get(serverName)
+      const instance = this.servers.get(key)
       if (!instance?.process?.stdin || !instance.process.stdin.writable) {
-        reject(new Error(`Server ${serverName} not running or not writable`))
+        reject(new Error(`Server ${key} not running`))
         return
       }
 
@@ -420,94 +276,46 @@ class LspManager {
       }, timeoutMs)
 
       instance.pendingRequests.set(id, { resolve, reject, timeout })
-
       const body = JSON.stringify({ jsonrpc: '2.0', id, method, params })
       const message = `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`
 
       try {
-        const canWrite = instance.process.stdin.write(message, (err) => {
-          if (err) {
-            console.error(`[LSP ${serverName}] Write callback error:`, err.message)
-            instance.pendingRequests.delete(id)
-            clearTimeout(timeout)
-            reject(err)
-          }
-        })
-
-        if (!canWrite) {
-          // 如果缓冲区已满，等待 drain 事件
-          instance.process.stdin.once('drain', () => {
-            console.log(`[LSP ${serverName}] stdin drained`)
-          })
-        }
+        instance.process.stdin.write(message)
       } catch (err: any) {
-        // 处理同步写入错误
         instance.pendingRequests.delete(id)
         clearTimeout(timeout)
-        console.error(`[LSP ${serverName}] Write error:`, err.message)
-
-        // 标记服务器为未初始化，允许后续重启
-        instance.initialized = false
-        reject(new Error(`Failed to write to ${serverName}: ${err.message}`))
+        reject(err)
       }
     })
   }
 
-  /**
-   * 发送通知
-   */
-  sendNotification(serverName: string, method: string, params: any): void {
-    const instance = this.servers.get(serverName)
+  sendNotification(key: string, method: string, params: any): void {
+    const instance = this.servers.get(key)
     if (!instance?.process?.stdin || !instance.process.stdin.writable) return
-
     const body = JSON.stringify({ jsonrpc: '2.0', method, params })
     const message = `Content-Length: ${Buffer.byteLength(body)}\r\n\r\n${body}`
-
-    try {
-      instance.process.stdin.write(message)
-    } catch (err: any) {
-      // 处理写入错误（如 EPIPE），静默忽略通知失败
-      console.warn(`[LSP ${serverName}] Notification write error:`, err.message)
-      instance.initialized = false
-    }
+    try { instance.process.stdin.write(message) } catch { }
   }
 
-  /**
-   * 初始化服务器
-   */
-  private async initializeServer(serverName: string, workspacePath: string): Promise<void> {
+  private async initializeServer(key: string, workspacePath: string): Promise<void> {
     const normalizedPath = workspacePath.replace(/\\/g, '/')
-    const rootUri = /^[a-zA-Z]:/.test(normalizedPath)
-      ? `file:///${normalizedPath}`
-      : `file://${normalizedPath}`
+    const rootUri = /^[a-zA-Z]:/.test(normalizedPath) ? `file:///${normalizedPath}` : `file://${normalizedPath}`
 
-    // 等待进程就绪（给进程一点启动时间）
-    await new Promise(resolve => setTimeout(resolve, 100))
-
-    // 使用更长的超时时间进行初始化（TypeScript 服务器可能需要较长时间）
-    const initTimeout = serverName === 'typescript' ? 60000 : 45000
-
-    await this.sendRequest(serverName, 'initialize', {
+    await this.sendRequest(key, 'initialize', {
       processId: process.pid,
       rootUri,
       capabilities: this.getClientCapabilities(),
       workspaceFolders: [{ uri: rootUri, name: path.basename(workspacePath) }],
-    }, initTimeout)
+    }, 60000)
 
-    this.sendNotification(serverName, 'initialized', {})
+    this.sendNotification(key, 'initialized', {})
   }
 
-  /**
-   * 客户端能力
-   */
   private getClientCapabilities(): any {
     return {
       textDocument: {
         synchronization: { openClose: true, change: 2, save: { includeText: true } },
-        completion: {
-          completionItem: { snippetSupport: true, documentationFormat: ['markdown', 'plaintext'] },
-          contextSupport: true,
-        },
+        completion: { completionItem: { snippetSupport: true, documentationFormat: ['markdown', 'plaintext'] }, contextSupport: true },
         hover: { contentFormat: ['markdown', 'plaintext'] },
         signatureHelp: { signatureInformation: { documentationFormat: ['markdown', 'plaintext'] } },
         definition: { linkSupport: true },
@@ -523,79 +331,38 @@ class LspManager {
         foldingRange: {},
         publishDiagnostics: { relatedInformation: true },
       },
-      workspace: {
-        workspaceFolders: true,
-        applyEdit: true,
-        configuration: true,
-      },
+      workspace: { workspaceFolders: true, applyEdit: true, configuration: true },
     }
   }
 
-  /**
-   * 停止服务器
-   */
-  async stopServer(serverName: string): Promise<void> {
-    const instance = this.servers.get(serverName)
+  async stopServerByKey(key: string): Promise<void> {
+    const instance = this.servers.get(key)
     if (!instance?.process) return
-
     try {
-      await this.sendRequest(serverName, 'shutdown', null, 3000)
-      this.sendNotification(serverName, 'exit', null)
+      await this.sendRequest(key, 'shutdown', null, 3000)
+      this.sendNotification(key, 'exit', null)
     } catch { }
-
     instance.process.kill()
-    this.servers.delete(serverName)
-    console.log(`[LSP ${serverName}] Stopped`)
+    this.servers.delete(key)
   }
 
-  /**
-   * 停止所有服务器
-   */
   async stopAllServers(): Promise<void> {
-    await Promise.all(Array.from(this.servers.keys()).map(name => this.stopServer(name)))
+    await Promise.all(Array.from(this.servers.keys()).map(key => this.stopServerByKey(key)))
   }
 
-  /**
-   * 确保语言对应的服务器运行
-   */
   async ensureServerForLanguage(languageId: LanguageId, workspacePath: string): Promise<string | null> {
     const serverName = this.getServerForLanguage(languageId)
     if (!serverName) return null
-
     const success = await this.startServer(serverName, workspacePath)
-    return success ? serverName : null
+    return success ? this.getInstanceKey(serverName, workspacePath) : null
   }
 
-  /**
-   * 获取运行中的服务器
-   */
   getRunningServers(): string[] {
-    return Array.from(this.servers.entries())
-      .filter(([_, inst]) => inst.initialized)
-      .map(([name]) => name)
+    return Array.from(this.servers.keys())
   }
 
-  /**
-   * 获取诊断信息
-   */
   getDiagnostics(uri: string): any[] {
     return this.diagnosticsCache.get(uri) || []
-  }
-
-  /**
-   * 获取文档版本
-   */
-  getDocumentVersion(uri: string): number {
-    return this.documentVersions.get(uri) || 0
-  }
-
-  /**
-   * 增加文档版本
-   */
-  incrementDocumentVersion(uri: string): number {
-    const version = (this.documentVersions.get(uri) || 0) + 1
-    this.documentVersions.set(uri, version)
-    return version
   }
 }
 

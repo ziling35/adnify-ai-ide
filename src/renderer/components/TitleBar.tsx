@@ -1,4 +1,4 @@
-import { Minus, Square, X, Command, Search } from 'lucide-react'
+import { Minus, Square, X, Command, Search, Plus } from 'lucide-react'
 import { useStore } from '../store'
 import { Logo } from './Logo'
 
@@ -25,6 +25,13 @@ export default function TitleBar() {
 
       {/* Right Controls */}
       <div className="flex items-center justify-end gap-2 no-drag w-1/3">
+        <button
+          onClick={() => window.electronAPI.newWindow()}
+          className="p-1.5 rounded-md hover:bg-white/5 transition-colors text-text-muted hover:text-text-primary mr-2"
+          title="New Window (Ctrl+Shift+N)"
+        >
+          <Plus className="w-3.5 h-3.5" />
+        </button>
         <button
           onClick={() => window.electronAPI.minimize()}
           className="p-1.5 rounded-md hover:bg-white/5 transition-colors text-text-muted hover:text-text-primary"

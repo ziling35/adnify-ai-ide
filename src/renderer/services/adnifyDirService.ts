@@ -8,20 +8,6 @@
  *   ├── settings.json       # 项目级设置
  *   ├── workspace-state.json # 工作区状态（打开的文件等）
  *   └── rules.md            # 项目 AI 规则
- * 
- * 使用方法：
- *   import { adnifyDir } from './adnifyDirService'
- *   
- *   // 初始化（打开工作区时调用一次）
- *   await adnifyDir.initialize(workspacePath)
- *   
- *   // 读写数据
- *   const sessions = await adnifyDir.getSessions()
- *   await adnifyDir.saveSessions(sessions)
- *   
- *   // 切换工作区前
- *   await adnifyDir.flush()  // 保存所有缓存数据
- *   adnifyDir.reset()        // 重置服务
  */
 
 // 目录名常量
@@ -120,7 +106,8 @@ const DEFAULT_PROJECT_SETTINGS: ProjectSettingsData = {
 // ============ 服务实现 ============
 
 class AdnifyDirService {
-  private workspacePath: string | null = null
+  private primaryRoot: string | null = null
+  private initializedRoots: Set<string> = new Set()
   private initialized = false
 
   // 内存缓存
@@ -134,7 +121,7 @@ class AdnifyDirService {
       settings: null,
     }
 
-  // 脏标记（标记哪些数据需要保存）
+  // 脏标记
   private dirty: {
     sessions: boolean
     workspaceState: boolean
@@ -145,65 +132,65 @@ class AdnifyDirService {
       settings: false,
     }
 
-  // ============ 初始化和重置 ============
-
   /**
-   * 初始化 .adnify 目录
+   * 初始化指定根目录的 .adnify 结构
    */
-  async initialize(workspacePath: string): Promise<boolean> {
-    if (this.initialized && this.workspacePath === workspacePath) {
-      return true
-    }
-
-    this.workspacePath = workspacePath
+  async initialize(rootPath: string): Promise<boolean> {
+    if (this.initializedRoots.has(rootPath)) return true
 
     try {
-      const adnifyPath = this.getDirPath()
+      const adnifyPath = `${rootPath}/${ADNIFY_DIR_NAME}`
       const exists = await window.electronAPI.fileExists(adnifyPath)
 
       if (!exists) {
-        const created = await window.electronAPI.ensureDir(adnifyPath)
-        if (!created) {
-          console.error('[AdnifyDir] Failed to create directory')
-          return false
-        }
+        await window.electronAPI.ensureDir(adnifyPath)
       }
 
       // 创建 index 子目录
-      const indexPath = this.getFilePath(ADNIFY_FILES.INDEX_DIR)
+      const indexPath = `${adnifyPath}/${ADNIFY_FILES.INDEX_DIR}`
       const indexExists = await window.electronAPI.fileExists(indexPath)
       if (!indexExists) {
         await window.electronAPI.ensureDir(indexPath)
       }
 
-      // 加载缓存数据
-      await this.loadAllData()
-
-      this.initialized = true
-      console.log('[AdnifyDir] Initialized:', adnifyPath)
+      this.initializedRoots.add(rootPath)
+      console.log('[AdnifyDir] Root initialized:', rootPath)
       return true
     } catch (error) {
-      console.error('[AdnifyDir] Initialization failed:', error)
+      console.error('[AdnifyDir] Root initialization failed:', rootPath, error)
       return false
     }
   }
 
   /**
-   * 重置服务（切换工作区时调用）
+   * 设置主根目录（用于存储全局数据）
    */
+  async setPrimaryRoot(rootPath: string): Promise<void> {
+    if (this.primaryRoot === rootPath) return
+
+    // 如果之前有主根目录，先保存数据
+    if (this.primaryRoot) {
+      await this.flush()
+    }
+
+    this.primaryRoot = rootPath
+    await this.initialize(rootPath)
+    await this.loadAllData()
+    this.initialized = true
+    console.log('[AdnifyDir] Primary root set:', rootPath)
+  }
+
   reset(): void {
-    this.workspacePath = null
+    this.primaryRoot = null
+    this.initializedRoots.clear()
     this.initialized = false
     this.cache = { sessions: null, workspaceState: null, settings: null }
     this.dirty = { sessions: false, workspaceState: false, settings: false }
     console.log('[AdnifyDir] Reset')
   }
 
-  /**
-   * 保存所有脏数据到磁盘
-   */
   async flush(): Promise<void> {
-    if (!this.initialized) return
+    if (!this.initialized || !this.primaryRoot) return
 
     const promises: Promise<void>[] = []
 
@@ -226,38 +213,31 @@ class AdnifyDirService {
     console.log('[AdnifyDir] Flushed all data')
   }
 
-  // ============ 状态查询 ============
-
   isInitialized(): boolean {
-    return this.initialized && this.workspacePath !== null
+    return this.initialized && this.primaryRoot !== null
   }
 
-  getWorkspacePath(): string | null {
-    return this.workspacePath
+  getPrimaryRoot(): string | null {
+    return this.primaryRoot
   }
 
-  getDirPath(): string {
-    if (!this.workspacePath) {
+  getDirPath(rootPath?: string): string {
+    const targetRoot = rootPath || this.primaryRoot
+    if (!targetRoot) {
       throw new Error('[AdnifyDir] Not initialized')
     }
-    return `${this.workspacePath}/${ADNIFY_DIR_NAME}`
+    return `${targetRoot}/${ADNIFY_DIR_NAME}`
   }
 
-  getFilePath(file: AdnifyFile | string): string {
-    return `${this.getDirPath()}/${file}`
+  getFilePath(file: AdnifyFile | string, rootPath?: string): string {
+    return `${this.getDirPath(rootPath)}/${file}`
   }
 
-  // ============ Sessions 数据操作 ============
+  // ============ 数据操作 (基于 Primary Root) ============
 
   async getSessions(): Promise<SessionsData> {
-    if (this.cache.sessions) {
-      return this.cache.sessions
-    }
-
-    if (!this.isInitialized()) {
-      return {}
-    }
-
+    if (this.cache.sessions) return this.cache.sessions
+    if (!this.isInitialized()) return {}
     const data = await this.readJsonFile<SessionsData>(ADNIFY_FILES.SESSIONS)
     this.cache.sessions = data || {}
     return this.cache.sessions
@@ -266,8 +246,6 @@ class AdnifyDirService {
   async saveSessions(data: SessionsData): Promise<void> {
     this.cache.sessions = data
     this.dirty.sessions = true
-
-    // 立即写入（会话数据重要）
     if (this.isInitialized()) {
       await this.writeJsonFile(ADNIFY_FILES.SESSIONS, data)
       this.dirty.sessions = false
@@ -280,17 +258,9 @@ class AdnifyDirService {
     await this.saveSessions(sessions)
   }
 
-  // ============ WorkspaceState 数据操作 ============
-
   async getWorkspaceState(): Promise<WorkspaceStateData> {
-    if (this.cache.workspaceState) {
-      return this.cache.workspaceState
-    }
-
-    if (!this.isInitialized()) {
-      return { ...DEFAULT_WORKSPACE_STATE }
-    }
-
+    if (this.cache.workspaceState) return this.cache.workspaceState
+    if (!this.isInitialized()) return { ...DEFAULT_WORKSPACE_STATE }
     const data = await this.readJsonFile<WorkspaceStateData>(ADNIFY_FILES.WORKSPACE_STATE)
     this.cache.workspaceState = data || { ...DEFAULT_WORKSPACE_STATE }
     return this.cache.workspaceState
@@ -301,17 +271,9 @@ class AdnifyDirService {
     this.dirty.workspaceState = true
   }
 
-  // ============ Settings 数据操作 ============
-
   async getSettings(): Promise<ProjectSettingsData> {
-    if (this.cache.settings) {
-      return this.cache.settings
-    }
-
-    if (!this.isInitialized()) {
-      return { ...DEFAULT_PROJECT_SETTINGS }
-    }
-
+    if (this.cache.settings) return this.cache.settings
+    if (!this.isInitialized()) return { ...DEFAULT_PROJECT_SETTINGS }
     const data = await this.readJsonFile<ProjectSettingsData>(ADNIFY_FILES.SETTINGS)
     this.cache.settings = data ? { ...DEFAULT_PROJECT_SETTINGS, ...data } : { ...DEFAULT_PROJECT_SETTINGS }
     return this.cache.settings
@@ -320,8 +282,6 @@ class AdnifyDirService {
   async saveSettings(data: ProjectSettingsData): Promise<void> {
     this.cache.settings = data
     this.dirty.settings = true
-
-    // 立即写入
     if (this.isInitialized()) {
       await this.writeJsonFile(ADNIFY_FILES.SETTINGS, data)
       this.dirty.settings = false
@@ -330,42 +290,34 @@ class AdnifyDirService {
 
   // ============ 通用文件操作 ============
 
-  async readText(file: AdnifyFile | string): Promise<string | null> {
-    if (!this.isInitialized()) return null
-
+  async readText(file: AdnifyFile | string, rootPath?: string): Promise<string | null> {
     try {
-      return await window.electronAPI.readFile(this.getFilePath(file))
+      return await window.electronAPI.readFile(this.getFilePath(file, rootPath))
     } catch {
       return null
     }
   }
 
-  async writeText(file: AdnifyFile | string, content: string): Promise<boolean> {
-    if (!this.isInitialized()) return false
-
+  async writeText(file: AdnifyFile | string, content: string, rootPath?: string): Promise<boolean> {
     try {
-      return await window.electronAPI.writeFile(this.getFilePath(file), content)
+      return await window.electronAPI.writeFile(this.getFilePath(file, rootPath), content)
     } catch (error) {
       console.error(`[AdnifyDir] Failed to write ${file}:`, error)
       return false
     }
   }
 
-  async fileExists(file: AdnifyFile | string): Promise<boolean> {
-    if (!this.isInitialized()) return false
-
+  async fileExists(file: AdnifyFile | string, rootPath?: string): Promise<boolean> {
     try {
-      return await window.electronAPI.fileExists(this.getFilePath(file))
+      return await window.electronAPI.fileExists(this.getFilePath(file, rootPath))
     } catch {
       return false
     }
   }
 
-  async deleteFile(file: AdnifyFile | string): Promise<boolean> {
-    if (!this.isInitialized()) return false
-
+  async deleteFile(file: AdnifyFile | string, rootPath?: string): Promise<boolean> {
     try {
-      return await window.electronAPI.deleteFile(this.getFilePath(file))
+      return await window.electronAPI.deleteFile(this.getFilePath(file, rootPath))
     } catch {
       return false
     }
@@ -374,17 +326,14 @@ class AdnifyDirService {
   // ============ 内部方法 ============
 
   private async loadAllData(): Promise<void> {
-    // 并行加载所有数据
     const [sessions, workspaceState, settings] = await Promise.all([
       this.readJsonFile<SessionsData>(ADNIFY_FILES.SESSIONS),
       this.readJsonFile<WorkspaceStateData>(ADNIFY_FILES.WORKSPACE_STATE),
       this.readJsonFile<ProjectSettingsData>(ADNIFY_FILES.SETTINGS),
     ])
-
     this.cache.sessions = sessions || {}
     this.cache.workspaceState = workspaceState || { ...DEFAULT_WORKSPACE_STATE }
     this.cache.settings = settings ? { ...DEFAULT_PROJECT_SETTINGS, ...settings } : { ...DEFAULT_PROJECT_SETTINGS }
-
     console.log('[AdnifyDir] Loaded all data from disk')
   }
 
@@ -407,26 +356,14 @@ class AdnifyDirService {
     }
   }
 
-  // ============ 兼容旧 API（逐步废弃） ============
-
-  /** @deprecated 使用 getSessions/saveSessions */
-  async readJson<T>(file: AdnifyFile): Promise<T | null> {
-    return this.readJsonFile<T>(file)
-  }
-
-  /** @deprecated 使用 getSessions/saveSessions */
+  // ============ 兼容旧 API ============
+  /** @deprecated */
+  async readJson<T>(file: AdnifyFile): Promise<T | null> { return this.readJsonFile<T>(file) }
+  /** @deprecated */
   async writeJson<T>(file: AdnifyFile, data: T): Promise<boolean> {
-    try {
-      await this.writeJsonFile(file, data)
-      return true
-    } catch {
-      return false
-    }
+    try { await this.writeJsonFile(file, data); return true } catch { return false }
   }
 }
 
-// 单例导出
 export const adnifyDir = new AdnifyDirService()
-
-// 导出默认值供其他模块使用
 export { DEFAULT_PROJECT_SETTINGS, DEFAULT_WORKSPACE_STATE }

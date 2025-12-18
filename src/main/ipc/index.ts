@@ -23,6 +23,7 @@ import {
 
 export interface IPCContext {
   getMainWindow: () => BrowserWindow | null
+  createWindow: () => BrowserWindow
   mainStore: Store
   bootstrapStore: Store
   setMainStore: (store: Store) => void
@@ -32,17 +33,17 @@ export interface IPCContext {
  * 注册所有安全的 IPC handlers
  */
 export function registerAllHandlers(context: IPCContext) {
-  const { getMainWindow, mainStore, bootstrapStore, setMainStore } = context
+  const { getMainWindow, createWindow, mainStore, bootstrapStore, setMainStore } = context
 
   // 初始化安全模块
   securityManager.setMainWindow(getMainWindow())
 
   // 窗口控制
-  registerWindowHandlers(getMainWindow)
+  registerWindowHandlers(createWindow)
 
   // 文件操作（安全版）
   registerSecureFileHandlers(getMainWindow, mainStore, () => {
-    return mainStore.get('lastWorkspacePath') as string | null
+    return mainStore.get('lastWorkspaceSession') as { roots: string[] } | null
   })
 
   // 设置
@@ -50,7 +51,7 @@ export function registerAllHandlers(context: IPCContext) {
 
   // 终端（安全版）
   registerSecureTerminalHandlers(getMainWindow, () => {
-    return mainStore.get('lastWorkspacePath') as string | null
+    return mainStore.get('lastWorkspaceSession') as { roots: string[] } | null
   })
 
   // 搜索

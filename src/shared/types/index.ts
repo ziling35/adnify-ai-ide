@@ -11,6 +11,10 @@ export interface FileItem {
   name: string
   path: string
   isDirectory: boolean
+  isRoot?: boolean
+  children?: FileItem[]
+  lastModified?: number
+  size?: number
 }
 
 export interface FileSnapshot {

@@ -6,6 +6,7 @@ export interface FileItem {
   name: string
   path: string
   isDirectory: boolean
+  isRoot?: boolean
 }
 
 export interface LLMStreamChunk {
@@ -118,129 +119,9 @@ export interface SecureCommandRequest {
   requireConfirm?: boolean
 }
 
-export interface ElectronAPI {
-  // App lifecycle
-  appReady: () => void
-
-  // Window controls
-  minimize: () => void
-  maximize: () => void
-  close: () => void
-
-  // File operations (安全 - 强制工作区边界)
-  openFile: () => Promise<{ path: string; content: string } | null>
-  openFolder: () => Promise<string | null>
-  showOpenDialog: (options: { properties?: string[]; defaultPath?: string; filters?: { name: string; extensions: string[] }[] }) => Promise<string[] | null>
-  restoreWorkspace: () => Promise<string | null>
-  readDir: (path: string) => Promise<FileItem[]>
-  getFileTree: (path: string, maxDepth?: number) => Promise<string>
-  readFile: (path: string) => Promise<string | null>
-  writeFile: (path: string, content: string) => Promise<boolean>
-  ensureDir: (path: string) => Promise<boolean>
-  saveFile: (content: string, path?: string) => Promise<string | null>
-  fileExists: (path: string) => Promise<boolean>
-  showItemInFolder: (path: string) => Promise<void>
-  mkdir: (path: string) => Promise<boolean>
-  deleteFile: (path: string) => Promise<boolean>
-  renameFile: (oldPath: string, newPath: string) => Promise<boolean>
-  searchFiles: (query: string, rootPath: string, options?: SearchFilesOptions) => Promise<SearchFileResult[]>
-
-  // Settings
-  getSetting: (key: string) => Promise<unknown>
-  setSetting: (key: string, value: unknown) => Promise<boolean>
-  getDataPath: () => Promise<string>
-  setDataPath: (path: string) => Promise<boolean>
-
-  // LLM
-  sendMessage: (params: LLMSendMessageParams) => Promise<void>
-  abortMessage: () => void
-  onLLMStream: (callback: (chunk: LLMStreamChunk) => void) => () => void
-  onLLMToolCall: (callback: (toolCall: LLMToolCall) => void) => () => void
-  onLLMError: (callback: (error: LLMError) => void) => () => void
-  onLLMDone: (callback: (result: LLMResult) => void) => () => void
-
-  // Interactive Terminal (安全 - 可控的交互终端)
-  createTerminal: (options: { id: string; cwd?: string; shell?: string }) => Promise<boolean>
-  writeTerminal: (id: string, data: string) => Promise<void>
-  resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>
-  killTerminal: (id?: string) => void
-  getAvailableShells: () => Promise<{ label: string; path: string }[]>
-
-  // ✅ Secure Execution - 新的安全命令执行接口（替换危险的 executeCommand）
-  executeSecureCommand: (request: SecureCommandRequest) => Promise<{
-    success: boolean
-    output?: string
-    errorOutput?: string
-    exitCode?: number
-    error?: string
-  }>
-
-  // ✅ Secure Git - 新的安全 Git 执行（替换 gitExec）
-  gitExecSecure: (args: string[], cwd: string) => Promise<{
-    success: boolean
-    stdout?: string
-    stderr?: string
-    exitCode?: number
-    error?: string
-  }>
-
-  // ✅ Security Management - 安全管理接口
-  getAuditLogs: (limit?: number) => Promise<AuditLog[]>
-  getPermissions: () => Promise<Record<string, string>>
-  resetPermissions: () => Promise<boolean>
-
-  onTerminalData: (callback: (event: { id: string; data: string }) => void) => () => void
-  onFileChanged: (callback: (event: { event: 'create' | 'update' | 'delete'; path: string }) => void) => () => void
-
-  // Codebase Indexing
-  indexInitialize: (workspacePath: string) => Promise<{ success: boolean; error?: string }>
-  indexStart: (workspacePath: string) => Promise<{ success: boolean; error?: string }>
-  indexStatus: (workspacePath: string) => Promise<IndexStatus>
-  indexHasIndex: (workspacePath: string) => Promise<boolean>
-  indexSearch: (workspacePath: string, query: string, topK?: number) => Promise<IndexSearchResult[]>
-  indexUpdateFile: (workspacePath: string, filePath: string) => Promise<{ success: boolean; error?: string }>
-  indexClear: (workspacePath: string) => Promise<{ success: boolean; error?: string }>
-  indexUpdateEmbeddingConfig: (workspacePath: string, config: EmbeddingConfigInput) => Promise<{ success: boolean; error?: string }>
-  indexTestConnection: (workspacePath: string) => Promise<{ success: boolean; error?: string; latency?: number }>
-  indexGetProviders: () => Promise<EmbeddingProvider[]>
-  onIndexProgress: (callback: (status: IndexStatus) => void) => () => void
-
-  // LSP (Language Server Protocol)
-  lspStart: (workspacePath: string) => Promise<{ success: boolean }>
-  lspStop: () => Promise<{ success: boolean }>
-  lspDidOpen: (params: { uri: string; languageId: string; version: number; text: string }) => Promise<void>
-  lspDidChange: (params: { uri: string; version: number; text: string }) => Promise<void>
-  lspDidClose: (params: { uri: string }) => Promise<void>
-  lspDefinition: (params: { uri: string; line: number; character: number }) => Promise<LspLocation[] | null>
-  lspTypeDefinition: (params: { uri: string; line: number; character: number }) => Promise<LspLocation[] | null>
-  lspImplementation: (params: { uri: string; line: number; character: number }) => Promise<LspLocation[] | null>
-  lspReferences: (params: { uri: string; line: number; character: number }) => Promise<LspLocation[] | null>
-  lspHover: (params: { uri: string; line: number; character: number }) => Promise<LspHover | null>
-  lspCompletion: (params: { uri: string; line: number; character: number }) => Promise<LspCompletionList | null>
-  lspCompletionResolve: (item: LspCompletionItem) => Promise<LspCompletionItem>
-  lspSignatureHelp: (params: { uri: string; line: number; character: number }) => Promise<LspSignatureHelp | null>
-  lspRename: (params: { uri: string; line: number; character: number; newName: string }) => Promise<LspWorkspaceEdit | null>
-  lspPrepareRename: (params: { uri: string; line: number; character: number }) => Promise<LspPrepareRename | null>
-  lspDocumentSymbol: (params: { uri: string }) => Promise<LspDocumentSymbol[] | null>
-  lspWorkspaceSymbol: (params: { query: string }) => Promise<LspSymbolInformation[] | null>
-  lspCodeAction: (params: { uri: string; range: LspRange; diagnostics?: LspDiagnostic[] }) => Promise<LspCodeAction[] | null>
-  lspFormatting: (params: { uri: string; options?: LspFormattingOptions }) => Promise<LspTextEdit[] | null>
-  lspRangeFormatting: (params: { uri: string; range: LspRange; options?: LspFormattingOptions }) => Promise<LspTextEdit[] | null>
-  lspDocumentHighlight: (params: { uri: string; line: number; character: number }) => Promise<LspDocumentHighlight[] | null>
-  lspFoldingRange: (params: { uri: string }) => Promise<LspFoldingRange[] | null>
-  lspInlayHint: (params: { uri: string; range: LspRange }) => Promise<LspInlayHint[] | null>
-  getLspDiagnostics: (filePath: string) => Promise<LspDiagnostic[]>
-  onLspDiagnostics: (callback: (params: { uri: string; diagnostics: LspDiagnostic[] }) => void) => () => void
-}
-
-// Indexing types
-export type EmbeddingProviderType = 'jina' | 'voyage' | 'openai' | 'cohere' | 'huggingface' | 'ollama'
-
-export interface EmbeddingConfigInput {
-  provider?: EmbeddingProviderType
-  apiKey?: string
-  model?: string
-  baseUrl?: string
+export interface WorkspaceConfig {
+  configPath: string | null
+  roots: string[]
 }
 
 export interface IndexStatus {
@@ -268,6 +149,132 @@ export interface EmbeddingProvider {
   name: string
   description: string
   free: boolean
+}
+
+export interface EmbeddingConfigInput {
+  provider?: 'jina' | 'voyage' | 'openai' | 'cohere' | 'huggingface' | 'ollama'
+  apiKey?: string
+  model?: string
+  baseUrl?: string
+}
+
+export interface ElectronAPI {
+  // App lifecycle
+  appReady: () => void
+
+  // Window controls
+  minimize: () => void
+  maximize: () => void
+  close: () => void
+  newWindow: () => void
+
+  // File operations (安全 - 强制工作区边界)
+  openFile: () => Promise<{ path: string; content: string } | null>
+  openFolder: () => Promise<string | null>
+  openWorkspace: () => Promise<WorkspaceConfig | null>
+  addFolderToWorkspace: () => Promise<string | null>
+  saveWorkspace: (configPath: string, roots: string[]) => Promise<boolean>
+  restoreWorkspace: () => Promise<WorkspaceConfig | null>
+  readDir: (path: string) => Promise<FileItem[]>
+  getFileTree: (path: string, maxDepth?: number) => Promise<string>
+  readFile: (path: string) => Promise<string | null>
+  writeFile: (path: string, content: string) => Promise<boolean>
+  ensureDir: (path: string) => Promise<boolean>
+  saveFile: (content: string, path?: string) => Promise<string | null>
+  fileExists: (path: string) => Promise<boolean>
+  showItemInFolder: (path: string) => Promise<void>
+  mkdir: (path: string) => Promise<boolean>
+  deleteFile: (path: string) => Promise<boolean>
+  renameFile: (oldPath: string, newPath: string) => Promise<boolean>
+  searchFiles: (query: string, rootPath: string | string[], options?: SearchFilesOptions) => Promise<SearchFileResult[]>
+
+  // Settings
+  getSetting: (key: string) => Promise<unknown>
+  setSetting: (key: string, value: unknown) => Promise<boolean>
+  getDataPath: () => Promise<string>
+  setDataPath: (path: string) => Promise<boolean>
+  onSettingsChanged: (callback: (event: { key: string; value: any }) => void) => () => void
+
+  // LLM
+  sendMessage: (params: LLMSendMessageParams) => Promise<void>
+  abortMessage: () => void
+  onLLMStream: (callback: (chunk: LLMStreamChunk) => void) => () => void
+  onLLMToolCall: (callback: (toolCall: LLMToolCall) => void) => () => void
+  onLLMError: (callback: (error: LLMError) => void) => () => void
+  onLLMDone: (callback: (result: LLMResult) => void) => () => void
+
+  // Interactive Terminal (安全 - 可控的交互终端)
+  createTerminal: (options: { id: string; cwd?: string; shell?: string }) => Promise<boolean>
+  writeTerminal: (id: string, data: string) => Promise<void>
+  resizeTerminal: (id: string, cols: number, rows: number) => Promise<void>
+  killTerminal: (id?: string) => void
+  getAvailableShells: () => Promise<{ label: string; path: string }[]>
+  onTerminalData: (callback: (event: { id: string; data: string }) => void) => () => void
+
+  // ✅ Secure Execution - 新的安全命令执行接口
+  executeSecureCommand: (request: SecureCommandRequest) => Promise<{
+    success: boolean
+    output?: string
+    errorOutput?: string
+    exitCode?: number
+    error?: string
+  }>
+
+  // ✅ Secure Git - 新的安全 Git 执行
+  gitExecSecure: (args: string[], cwd: string) => Promise<{
+    success: boolean
+    stdout?: string
+    stderr?: string
+    exitCode?: number
+    error?: string
+  }>
+
+  // ✅ Security Management - 安全管理接口
+  getAuditLogs: (limit?: number) => Promise<AuditLog[]>
+  getPermissions: () => Promise<Record<string, string>>
+  resetPermissions: () => Promise<boolean>
+
+  onFileChanged: (callback: (event: { event: 'create' | 'update' | 'delete'; path: string }) => void) => () => void
+
+  // Codebase Indexing
+  indexInitialize: (workspacePath: string) => Promise<{ success: boolean; error?: string }>
+  indexStart: (workspacePath: string) => Promise<{ success: boolean; error?: string }>
+  indexStatus: (workspacePath: string) => Promise<IndexStatus>
+  indexHasIndex: (workspacePath: string) => Promise<boolean>
+  indexSearch: (workspacePath: string, query: string, topK?: number) => Promise<IndexSearchResult[]>
+  indexUpdateFile: (workspacePath: string, filePath: string) => Promise<{ success: boolean; error?: string }>
+  indexClear: (workspacePath: string) => Promise<{ success: boolean; error?: string }>
+  indexUpdateEmbeddingConfig: (workspacePath: string, config: EmbeddingConfigInput) => Promise<{ success: boolean; error?: string }>
+  indexTestConnection: (workspacePath: string) => Promise<{ success: boolean; error?: string; latency?: number }>
+  indexGetProviders: () => Promise<EmbeddingProvider[]>
+  onIndexProgress: (callback: (status: IndexStatus) => void) => () => void
+
+  // LSP (Language Server Protocol)
+  lspStart: (workspacePath: string) => Promise<{ success: boolean }>
+  lspStop: () => Promise<{ success: boolean }>
+  lspDidOpen: (params: { uri: string; languageId: string; version: number; text: string; workspacePath?: string | null }) => Promise<void>
+  lspDidChange: (params: { uri: string; version: number; text: string; workspacePath?: string | null }) => Promise<void>
+  lspDidClose: (params: { uri: string; workspacePath?: string | null }) => Promise<void>
+  lspDefinition: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspLocation[] | null>
+  lspTypeDefinition: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspLocation[] | null>
+  lspImplementation: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspLocation[] | null>
+  lspReferences: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspLocation[] | null>
+  lspHover: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspHover | null>
+  lspCompletion: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspCompletionList | null>
+  lspCompletionResolve: (item: LspCompletionItem) => Promise<LspCompletionItem>
+  lspSignatureHelp: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspSignatureHelp | null>
+  lspRename: (params: { uri: string; line: number; character: number; newName: string; workspacePath?: string | null }) => Promise<LspWorkspaceEdit | null>
+  lspPrepareRename: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspPrepareRename | null>
+  lspDocumentSymbol: (params: { uri: string; workspacePath?: string | null }) => Promise<LspDocumentSymbol[] | null>
+  lspWorkspaceSymbol: (params: { query: string }) => Promise<LspSymbolInformation[] | null>
+  lspCodeAction: (params: { uri: string; range: LspRange; diagnostics?: LspDiagnostic[]; workspacePath?: string | null }) => Promise<LspCodeAction[] | null>
+  lspFormatting: (params: { uri: string; options?: LspFormattingOptions; workspacePath?: string | null }) => Promise<LspTextEdit[] | null>
+  lspRangeFormatting: (params: { uri: string; range: LspRange; options?: LspFormattingOptions; workspacePath?: string | null }) => Promise<LspTextEdit[] | null>
+  lspDocumentHighlight: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspDocumentHighlight[] | null>
+  lspFoldingRange: (params: { uri: string; workspacePath?: string | null }) => Promise<LspFoldingRange[] | null>
+  lspInlayHint: (params: { uri: string; range: LspRange; workspacePath?: string | null }) => Promise<LspInlayHint[] | null>
+  getLspDiagnostics: (filePath: string) => Promise<LspDiagnostic[]>
+  onLspDiagnostics: (callback: (params: { uri: string; diagnostics: LspDiagnostic[] }) => void) => () => void
 }
 
 // LSP Types
@@ -402,4 +409,4 @@ declare global {
   }
 }
 
-export {}
+export { }

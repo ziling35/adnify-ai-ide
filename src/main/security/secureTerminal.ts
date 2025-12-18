@@ -140,7 +140,7 @@ class SecureCommandParser {
  */
 export function registerSecureTerminalHandlers(
   getMainWindow: () => BrowserWindow | null,
-  getWorkspace: () => string | null
+  getWorkspace: () => { roots: string[] } | null
 ) {
   /**
    * 安全的命令执行（白名单 + 工作区边界）
@@ -169,12 +169,12 @@ export function registerSecureTerminalHandlers(
     }
 
     // 1. 校验工作区边界（如果指定了 cwd）
-    const targetPath = cwd || workspace
-    if (!securityManager.validateWorkspacePath(targetPath, workspace)) {
+    const targetPath = cwd || workspace.roots[0]
+    if (!securityManager.validateWorkspacePath(targetPath, workspace.roots)) {
       securityManager.logOperation(OperationType.SHELL_EXECUTE, command, false, {
         reason: '路径在工作区外',
         targetPath,
-        workspace,
+        workspace: workspace.roots,
       })
       return { success: false, error: '不允许在工作区外执行命令' }
     }
@@ -204,7 +204,7 @@ export function registerSecureTerminalHandlers(
       const hasPermission = await securityManager.checkPermission(
         OperationType.SHELL_EXECUTE,
         fullCommand,
-        { workspace, cwd: targetPath }
+        { workspace: workspace.roots, cwd: targetPath }
       )
 
       if (!hasPermission) {
@@ -270,11 +270,11 @@ export function registerSecureTerminalHandlers(
     }
 
     // 1. 验证工作区边界
-    if (!securityManager.validateWorkspacePath(cwd, workspace)) {
+    if (!securityManager.validateWorkspacePath(cwd, workspace.roots)) {
       securityManager.logOperation(OperationType.GIT_EXEC, args.join(' '), false, {
         reason: '路径在工作区外',
         cwd,
-        workspace,
+        workspace: workspace.roots,
       })
       return { success: false, error: '不允许在工作区外执行Git命令' }
     }
@@ -308,7 +308,7 @@ export function registerSecureTerminalHandlers(
     const hasPermission = await securityManager.checkPermission(
       OperationType.GIT_EXEC,
       `git ${fullCommand}`,
-      { workspace, cwd }
+      { workspace: workspace.roots, cwd }
     )
 
     if (!hasPermission) {
@@ -392,8 +392,8 @@ export function registerSecureTerminalHandlers(
     }
 
     // 限制只能在工作区内使用终端
-    const targetCwd = cwd || workspace || process.cwd()
-    if (workspace && !securityManager.validateWorkspacePath(targetCwd, workspace)) {
+    const targetCwd = cwd || (workspace ? workspace.roots[0] : process.cwd())
+    if (workspace && !securityManager.validateWorkspacePath(targetCwd, workspace.roots)) {
       securityManager.logOperation(OperationType.TERMINAL_INTERACTIVE, 'terminal:create', false, {
         reason: '路径在工作区外',
         cwd: targetCwd,
