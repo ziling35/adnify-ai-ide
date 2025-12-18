@@ -115,33 +115,38 @@ function AppContent() {
           setTheme(savedTheme as 'adnify-dark' | 'midnight' | 'dawn')
         }
 
-        // Auto-restore workspace
-        updateLoaderStatus('Restoring workspace...')
-        const workspaceConfig = await window.electronAPI.restoreWorkspace()
-        if (workspaceConfig && workspaceConfig.roots && workspaceConfig.roots.length > 0) {
-          setWorkspace(workspaceConfig)
+        // Auto-restore workspace (only if not an empty window)
+        const params = new URLSearchParams(window.location.search)
+        const isEmptyWindow = params.get('empty') === '1'
 
-          // 并行初始化所有根目录的 .adnify 结构
-          updateLoaderStatus('Initializing workspace roots...')
-          await Promise.all(workspaceConfig.roots.map(root => adnifyDir.initialize(root)))
+        if (!isEmptyWindow) {
+          updateLoaderStatus('Restoring workspace...')
+          const workspaceConfig = await window.electronAPI.restoreWorkspace()
+          if (workspaceConfig && workspaceConfig.roots && workspaceConfig.roots.length > 0) {
+            setWorkspace(workspaceConfig)
 
-          // 设置主根目录（默认为第一个）
-          await adnifyDir.setPrimaryRoot(workspaceConfig.roots[0])
+            // 并行初始化所有根目录的 .adnify 结构
+            updateLoaderStatus('Initializing workspace roots...')
+            await Promise.all(workspaceConfig.roots.map(root => adnifyDir.initialize(root)))
 
-          // 初始化检查点服务
-          await checkpointService.init()
+            // 设置主根目录（默认为第一个）
+            await adnifyDir.setPrimaryRoot(workspaceConfig.roots[0])
 
-          // 重新加载 Agent Store（确保从 .adnify 读取最新数据）
-          await useAgentStore.persist.rehydrate()
+            // 初始化检查点服务
+            await checkpointService.init()
 
-          updateLoaderStatus('Loading files...')
-          // 初始显示第一个根目录的文件
-          const items = await window.electronAPI.readDir(workspaceConfig.roots[0])
-          setFiles(items)
+            // 重新加载 Agent Store（确保从 .adnify 读取最新数据）
+            await useAgentStore.persist.rehydrate()
 
-          // 恢复工作区状态（打开的文件等）
-          updateLoaderStatus('Restoring editor state...')
-          await restoreWorkspaceState()
+            updateLoaderStatus('Loading files...')
+            // 初始显示第一个根目录的文件
+            const items = await window.electronAPI.readDir(workspaceConfig.roots[0])
+            setFiles(items)
+
+            // 恢复工作区状态（打开的文件等）
+            updateLoaderStatus('Restoring editor state...')
+            await restoreWorkspaceState()
+          }
         }
 
         // 注册设置同步监听器
