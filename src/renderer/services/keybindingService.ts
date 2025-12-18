@@ -4,6 +4,7 @@ export interface Command {
     title: string
     category?: string
     defaultKey?: string
+    handler?: () => void
 }
 
 export interface Keybinding {
@@ -20,6 +21,7 @@ class KeybindingService {
         if (this.initialized) return
         await this.loadOverrides()
         this.initialized = true
+        console.log('[KeybindingService] Initialized with', this.commands.size, 'commands')
     }
 
     registerCommand(command: Command) {
@@ -38,7 +40,24 @@ class KeybindingService {
         return this.overrides.has(commandId)
     }
 
-    matches(e: React.KeyboardEvent | KeyboardEvent, commandId: string): boolean {
+    /**
+     * 处理按键事件
+     * @returns 如果事件被处理则返回 true
+     */
+    handleKeyDown(e: KeyboardEvent | React.KeyboardEvent): boolean {
+        for (const [id, command] of this.commands) {
+            if (this.matches(e as KeyboardEvent, id)) {
+                console.log(`[KeybindingService] Executing command: ${id}`)
+                if (command.handler) {
+                    command.handler()
+                    return true
+                }
+            }
+        }
+        return false
+    }
+
+    matches(e: KeyboardEvent | React.KeyboardEvent, commandId: string): boolean {
         const binding = this.getBinding(commandId)
         if (!binding) return false
 
@@ -50,15 +69,25 @@ class KeybindingService {
         const shift = parts.includes('shift')
         const alt = parts.includes('alt') || parts.includes('option')
 
-        if (e.metaKey !== meta) return false
-        if (e.ctrlKey !== ctrl) return false
-        if (e.shiftKey !== shift) return false
-        if (e.altKey !== alt) return false
+        const modifiersMatch =
+            (e.metaKey === meta) &&
+            (e.ctrlKey === ctrl) &&
+            (e.shiftKey === shift) &&
+            (e.altKey === alt)
 
         // Handle special keys
-        if (key === 'space') return e.code === 'Space' || e.key === ' '
+        let keyMatch = false
+        if (key === 'space') {
+            keyMatch = e.code === 'Space' || e.key === ' '
+        } else {
+            keyMatch = e.key.toLowerCase() === key
+        }
 
-        return e.key.toLowerCase() === key
+        if (modifiersMatch && keyMatch) {
+            console.log(`[KeybindingService] Match found for ${commandId} (${binding})`)
+        }
+
+        return modifiersMatch && keyMatch
     }
 
     async updateBinding(commandId: string, newKey: string | null) {

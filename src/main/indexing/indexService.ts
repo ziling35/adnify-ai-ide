@@ -12,8 +12,7 @@ import {
   IndexConfig,
   IndexStatus,
   SearchResult,
-  CodeChunk,
-  IndexedChunk,
+
   EmbeddingConfig,
   DEFAULT_INDEX_CONFIG,
 } from './types'

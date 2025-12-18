@@ -103,7 +103,7 @@ const LSP_SERVERS: LspServerConfig[] = [
 class LspManager {
   private servers: Map<string, LspServerInstance> = new Map() // key: serverName:workspacePath
   private languageToServer: Map<LanguageId, string> = new Map()
-  private documentVersions: Map<string, number> = new Map()
+  // private documentVersions: Map<string, number> = new Map()
   private diagnosticsCache: Map<string, any[]> = new Map()
   private startingServers: Set<string> = new Set()
 

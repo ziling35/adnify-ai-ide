@@ -9,7 +9,7 @@
  * 4. Anthropic 格式：assistant 消息带 tool_use，user 消息带 tool_result
  */
 
-import { ChatMessage, isUserMessage, isAssistantMessage, isToolResultMessage, isToolCallPart } from './types'
+import { ChatMessage, isUserMessage, isAssistantMessage, isToolResultMessage } from './types'
 
 // ===== 简化的 LLM 消息格式（内部使用）=====
 
@@ -102,7 +102,7 @@ export function prepareMessagesForOpenAI(
   // 预处理：收集每个 assistant 消息后面的 tool 结果
   // 这样可以正确构建 tool_calls
   const toolResultsMap = new Map<number, SimpleLLMMessage[]>()
-  
+
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i]
     if (msg.role === 'tool') {
@@ -130,7 +130,7 @@ export function prepareMessagesForOpenAI(
       })
     } else if (msg.role === 'assistant') {
       const toolResults = toolResultsMap.get(i)
-      
+
       if (toolResults && toolResults.length > 0) {
         // 有 tool 调用的 assistant 消息
         result.push({
@@ -145,7 +145,7 @@ export function prepareMessagesForOpenAI(
             },
           })),
         })
-        
+
         // 紧跟 tool 结果消息
         for (const tr of toolResults) {
           result.push({

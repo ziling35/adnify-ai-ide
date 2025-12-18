@@ -3,7 +3,7 @@
  */
 
 import { ipcMain, BrowserWindow } from 'electron'
-import { getIndexService, destroyIndexService, EmbeddingConfig } from '../indexing'
+import { getIndexService, EmbeddingConfig } from '../indexing'
 
 export function registerIndexingHandlers(getMainWindow: () => BrowserWindow | null) {
   // 初始化索引服务
@@ -31,12 +31,12 @@ export function registerIndexingHandlers(getMainWindow: () => BrowserWindow | nu
         indexService.setMainWindow(mainWindow)
       }
       await indexService.initialize()
-      
+
       // 异步执行索引
       indexService.indexWorkspace().catch(e => {
         console.error('[Index] Indexing failed:', e)
       })
-      
+
       return { success: true }
     } catch (e) {
       console.error('[Index] Start failed:', e)

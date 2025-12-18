@@ -65,7 +65,7 @@ function AppContent() {
   }, [])
 
   // 移除初始 HTML loader
-  const removeInitialLoader = useCallback((status?: string) => {
+  const removeInitialLoader = useCallback((_status?: string) => {
     const loader = document.getElementById('initial-loader')
     if (loader) {
       loader.classList.add('fade-out')
@@ -354,8 +354,9 @@ export default function App() {
   return (
     <ToastProvider>
       <ToastInitializer />
-      <ThemeManager />
-      <AppContent />
+      <ThemeManager>
+        <AppContent />
+      </ThemeManager>
     </ToastProvider>
   )
 }

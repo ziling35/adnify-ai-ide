@@ -47,7 +47,7 @@ function getMainWindow() {
 // 窗口创建
 // ==========================================
 
-function createWindow() {
+function createWindow(isEmpty: boolean = false) {
   // 图标路径:开发环境用 public,生产环境用 resources
   const iconPath = app.isPackaged
     ? path.join(process.resourcesPath, 'icon.png')
@@ -113,10 +113,11 @@ function createWindow() {
   })
 
   // 加载页面
+  const query = isEmpty ? '?empty=1' : ''
   if (!app.isPackaged) {
-    win.loadURL('http://localhost:5173')
+    win.loadURL(`http://localhost:5173${query}`)
   } else {
-    win.loadFile(path.join(__dirname, '../renderer/index.html'))
+    win.loadFile(path.join(__dirname, '../renderer/index.html'), { query: isEmpty ? { empty: '1' } : undefined })
   }
 
   return win
@@ -157,7 +158,7 @@ app.whenReady().then(() => {
 
 // 处理第二个实例启动（打开新窗口）
 app.on('second-instance', () => {
-  createWindow()
+  createWindow(false)
 })
 
 app.on('window-all-closed', () => {

@@ -5,7 +5,7 @@
 
 import {
   EmbeddingConfig,
-  EmbeddingProvider,
+
   DEFAULT_EMBEDDING_MODELS,
   EMBEDDING_ENDPOINTS,
 } from './types'
@@ -68,7 +68,7 @@ export class EmbeddingService {
    */
   private async embedJina(texts: string[]): Promise<number[][]> {
     const url = this.config.baseUrl || EMBEDDING_ENDPOINTS.jina
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -179,7 +179,7 @@ export class EmbeddingService {
 
     // HuggingFace 需要逐个请求或使用特定格式
     const results: number[][] = []
-    
+
     for (const text of texts) {
       const response = await fetch(url, {
         method: 'POST',
@@ -245,20 +245,20 @@ export class EmbeddingService {
    */
   private meanPooling(tokenEmbeddings: number[][]): number[] {
     if (tokenEmbeddings.length === 0) return []
-    
+
     const dim = tokenEmbeddings[0].length
     const result = new Array(dim).fill(0)
-    
+
     for (const embedding of tokenEmbeddings) {
       for (let i = 0; i < dim; i++) {
         result[i] += embedding[i]
       }
     }
-    
+
     for (let i = 0; i < dim; i++) {
       result[i] /= tokenEmbeddings.length
     }
-    
+
     return result
   }
 
@@ -267,7 +267,7 @@ export class EmbeddingService {
    */
   async testConnection(): Promise<{ success: boolean; error?: string; latency?: number }> {
     const start = Date.now()
-    
+
     try {
       await this.embed('test connection')
       return {

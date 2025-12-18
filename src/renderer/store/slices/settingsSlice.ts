@@ -15,17 +15,14 @@ export interface LLMConfig {
 }
 
 export interface AutoApproveSettings {
-  // edits 已移除 - 文件编辑不需要确认（可通过Checkpoint撤销）
   terminal: boolean    // 终端命令（run_command）
   dangerous: boolean   // 危险操作（delete_file_or_folder）
 }
 
-// Provider 配置（自定义模型等）
 export interface ProviderModelConfig {
   customModels: string[]
 }
 
-// 安全设置
 export interface SecuritySettings {
   enablePermissionConfirm: boolean
   enableAuditLog: boolean
@@ -41,6 +38,8 @@ export interface SettingsSlice {
   promptTemplateId: string
   providerConfigs: Record<string, ProviderModelConfig>
   securitySettings: SecuritySettings
+  onboardingCompleted: boolean
+  hasExistingConfig: boolean
 
   setLLMConfig: (config: Partial<LLMConfig>) => void
   setLanguage: (lang: 'en' | 'zh') => void
@@ -50,6 +49,9 @@ export interface SettingsSlice {
   addCustomModel: (providerId: string, model: string) => void
   removeCustomModel: (providerId: string, model: string) => void
   setSecuritySettings: (settings: Partial<SecuritySettings>) => void
+  setOnboardingCompleted: (completed: boolean) => void
+  setHasExistingConfig: (hasConfig: boolean) => void
+  loadSettings: (isEmptyWindow?: boolean) => Promise<void>
 }
 
 const defaultLLMConfig: LLMConfig = {
@@ -60,8 +62,8 @@ const defaultLLMConfig: LLMConfig = {
 }
 
 const defaultAutoApprove: AutoApproveSettings = {
-  terminal: false,   // 默认需要确认终端命令
-  dangerous: false,  // 默认需要确认危险操作
+  terminal: false,
+  dangerous: false,
 }
 
 const defaultProviderConfigs: Record<string, ProviderModelConfig> = {
@@ -83,13 +85,15 @@ const defaultSecuritySettings: SecuritySettings = {
   showSecurityWarnings: true,
 }
 
-export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSlice> = (set) => ({
+export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSlice> = (set, get) => ({
   llmConfig: defaultLLMConfig,
   language: 'en',
   autoApprove: defaultAutoApprove,
   promptTemplateId: 'default',
   providerConfigs: defaultProviderConfigs,
   securitySettings: defaultSecuritySettings,
+  onboardingCompleted: true, // 默认 true，加载后更新
+  hasExistingConfig: true,
 
   setLLMConfig: (config) =>
     set((state) => ({
@@ -146,4 +150,34 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
     set((state) => ({
       securitySettings: { ...state.securitySettings, ...settings },
     })),
+
+  setOnboardingCompleted: (completed) => set({ onboardingCompleted: completed }),
+  setHasExistingConfig: (hasConfig) => set({ hasExistingConfig: hasConfig }),
+
+  loadSettings: async (isEmptyWindow = false) => {
+    try {
+      const settings = await window.electronAPI.getSetting('app-settings') as any
+      if (settings) {
+        set({
+          llmConfig: settings.llmConfig || defaultLLMConfig,
+          language: settings.language || 'en',
+          autoApprove: settings.autoApprove || defaultAutoApprove,
+          onboardingCompleted: settings.onboardingCompleted ?? true,
+          hasExistingConfig: !!settings.llmConfig?.apiKey,
+        })
+      } else {
+        set({ onboardingCompleted: false, hasExistingConfig: false })
+      }
+
+      if (!isEmptyWindow) {
+        const workspace = await window.electronAPI.restoreWorkspace()
+        if (workspace) {
+          // 这里需要访问 FileSlice 的方法，但 Slices 模式下可以通过 get() 访问
+          ; (get() as any).setWorkspace(workspace)
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load settings:', e)
+    }
+  },
 })

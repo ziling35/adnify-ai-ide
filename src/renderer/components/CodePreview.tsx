@@ -71,7 +71,7 @@ export default function CodePreview({
 }: CodePreviewProps) {
   const [copied, setCopied] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
-  const { language: uiLanguage } = useStore()
+  const { } = useStore()
 
   const detectedLanguage = language || detectLanguage(code, fileName)
   const lineCount = code.split('\n').length

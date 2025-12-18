@@ -1,5 +1,5 @@
-import { Minus, Square, X, Command, Search, Plus } from 'lucide-react'
-import { useStore } from '../store'
+import { Minus, Square, X, Search, Plus } from 'lucide-react'
+
 import { Logo } from './Logo'
 
 export default function TitleBar() {

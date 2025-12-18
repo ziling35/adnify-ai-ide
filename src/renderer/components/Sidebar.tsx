@@ -19,7 +19,7 @@ import { adnifyDir } from '../services/adnifyDirService'
 import { ContextMenu, ContextMenuItem } from './ContextMenu'
 import { directoryCacheService } from '../services/directoryCacheService'
 import { keybindingService } from '../services/keybindingService'
-const VIRTUAL_SCROLL_THRESHOLD = 100
+
 
 const getFileIcon = (name: string) => {
     const ext = name.split('.').pop()?.toLowerCase()
@@ -372,7 +372,7 @@ function FileTreeItem({
 }
 
 function ExplorerView() {
-    const { workspacePath, workspace, files, setWorkspacePath, setFiles, language } = useStore()
+    const { workspacePath, workspace, setWorkspacePath, setFiles, language } = useStore()
     const [gitStatus, setGitStatus] = useState<GitStatus | null>(null)
     const [isGitRepo, setIsGitRepo] = useState(false)
     // 内联创建状态：记录在哪个文件夹创建什么类型

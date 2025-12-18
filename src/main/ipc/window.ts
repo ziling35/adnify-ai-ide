@@ -4,7 +4,7 @@
 
 import { ipcMain, BrowserWindow } from 'electron'
 
-export function registerWindowHandlers(createWindow: () => BrowserWindow) {
+export function registerWindowHandlers(createWindow: (isEmpty?: boolean) => BrowserWindow) {
   ipcMain.on('window:minimize', (event) => {
     const win = BrowserWindow.fromWebContents(event.sender)
     win?.minimize()
@@ -26,6 +26,6 @@ export function registerWindowHandlers(createWindow: () => BrowserWindow) {
 
   // 新增：打开新窗口
   ipcMain.handle('window:new', () => {
-    createWindow()
+    createWindow(true)
   })
 }

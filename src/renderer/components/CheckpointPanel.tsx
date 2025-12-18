@@ -8,16 +8,10 @@ import { History, RotateCcw, ChevronDown, ChevronUp, FileText, MessageSquare, Wr
 import { useStore } from '@/renderer/store'
 import { useAgentStore } from '@/renderer/agent/core/AgentStore'
 import { checkpointService } from '@/renderer/agent/checkpointService'
+import { Checkpoint } from '@/renderer/agent/toolTypes'
 import { getFileName } from '@/renderer/utils/pathUtils'
 
-// Checkpoint 类型定义
-interface Checkpoint {
-  id: string
-  type: 'user_message' | 'tool_edit'
-  description: string
-  timestamp: number
-  snapshots: Record<string, { content: string }>
-}
+
 
 interface CheckpointItemProps {
   checkpoint: Checkpoint
@@ -117,7 +111,7 @@ export default function CheckpointPanel({ onClose }: CheckpointPanelProps) {
   const appendToAssistant = useAgentStore(state => state.appendToAssistant)
   const finalizeAssistant = useAgentStore(state => state.finalizeAssistant)
   const [isRollingBack, setIsRollingBack] = useState(false)
-  
+
   // 辅助函数：添加完整的助手消息
   const showMessage = (text: string) => {
     const id = addAssistantMessage()

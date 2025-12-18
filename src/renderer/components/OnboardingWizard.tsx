@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react'
 import {
-  ChevronRight, ChevronLeft, Check, Sparkles, Palette, 
+  ChevronRight, ChevronLeft, Check, Sparkles, Palette,
   Globe, Cpu, FolderOpen, Rocket, HardDrive
 } from 'lucide-react'
 import { useStore, LLMConfig } from '../store'
@@ -29,11 +29,11 @@ const LANGUAGES: { id: Language; name: string; native: string }[] = [
 ]
 
 export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) {
-  const { 
+  const {
     setLLMConfig, setLanguage, language,
     setWorkspacePath, setFiles
   } = useStore()
-  
+
   const [currentStep, setCurrentStep] = useState<Step>('welcome')
   const [selectedLanguage, setSelectedLanguage] = useState<Language>(language)
   const [selectedTheme, setSelectedTheme] = useState(themeManager.getCurrentTheme().id)
@@ -84,11 +84,16 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
     // 保存所有设置
     setLanguage(selectedLanguage)
     setLLMConfig(providerConfig)
-    
+
+    // 如果填写了 API Key，则标记为已有配置
+    if (providerConfig.apiKey) {
+      useStore.getState().setHasExistingConfig(true)
+    }
+
     await window.electronAPI.setSetting('language', selectedLanguage)
     await window.electronAPI.setSetting('llmConfig', providerConfig)
     await window.electronAPI.setSetting('onboardingCompleted', true)
-    
+
     onComplete()
   }
 
@@ -128,19 +133,17 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             {STEPS.slice(0, -1).map((step, index) => (
               <React.Fragment key={step}>
                 <div
-                  className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${
-                    index < currentStepIndex
+                  className={`w-2.5 h-2.5 rounded-full transition-all duration-300 ${index < currentStepIndex
                       ? 'bg-accent'
                       : index === currentStepIndex
-                      ? 'bg-accent scale-125'
-                      : 'bg-surface-active'
-                  }`}
+                        ? 'bg-accent scale-125'
+                        : 'bg-surface-active'
+                    }`}
                 />
                 {index < STEPS.length - 2 && (
                   <div
-                    className={`w-8 h-0.5 transition-all duration-300 ${
-                      index < currentStepIndex ? 'bg-accent' : 'bg-surface-active'
-                    }`}
+                    className={`w-8 h-0.5 transition-all duration-300 ${index < currentStepIndex ? 'bg-accent' : 'bg-surface-active'
+                      }`}
                   />
                 )}
               </React.Fragment>
@@ -149,10 +152,9 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
         </div>
 
         {/* 内容卡片 */}
-        <div 
-          className={`bg-background-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ${
-            isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
-          }`}
+        <div
+          className={`bg-background-secondary border border-border-subtle rounded-2xl shadow-2xl overflow-hidden transition-all duration-200 ${isTransitioning ? 'opacity-0 scale-95' : 'opacity-100 scale-100'
+            }`}
         >
           {/* Welcome Step */}
           {currentStep === 'welcome' && (
@@ -216,11 +218,10 @@ export default function OnboardingWizard({ onComplete }: OnboardingWizardProps) 
             <button
               onClick={goPrev}
               disabled={currentStepIndex === 0}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${
-                currentStepIndex === 0
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm transition-all ${currentStepIndex === 0
                   ? 'opacity-0 pointer-events-none'
                   : 'text-text-muted hover:text-text-primary hover:bg-surface-hover'
-              }`}
+                }`}
             >
               <ChevronLeft className="w-4 h-4" />
               {isZh ? '上一步' : 'Back'}
@@ -275,16 +276,16 @@ function WelcomeStep({ isZh }: { isZh: boolean }) {
           <div className="absolute -inset-4 bg-accent/10 rounded-3xl blur-xl -z-10" />
         </div>
       </div>
-      
+
       <h1 className="text-3xl font-bold text-text-primary mb-3">
         {isZh ? '欢迎使用 Adnify' : 'Welcome to Adnify'}
       </h1>
       <p className="text-text-muted max-w-md mx-auto leading-relaxed">
-        {isZh 
+        {isZh
           ? 'AI 驱动的智能代码编辑器，让编程更高效、更智能。接下来让我们完成一些基本设置。'
           : 'An AI-powered intelligent code editor that makes programming more efficient and smarter. Let\'s complete some basic setup.'}
       </p>
-      
+
       <div className="mt-10 flex justify-center gap-6 text-sm text-text-muted">
         <div className="flex items-center gap-2">
           <Sparkles className="w-4 h-4 text-accent" />
@@ -299,14 +300,14 @@ function WelcomeStep({ isZh }: { isZh: boolean }) {
   )
 }
 
-function LanguageStep({ 
-  isZh, 
-  selectedLanguage, 
-  onSelect 
-}: { 
+function LanguageStep({
+  isZh,
+  selectedLanguage,
+  onSelect
+}: {
   isZh: boolean
   selectedLanguage: Language
-  onSelect: (lang: Language) => void 
+  onSelect: (lang: Language) => void
 }) {
   return (
     <div className="px-8 py-10">
@@ -325,11 +326,10 @@ function LanguageStep({
           <button
             key={lang.id}
             onClick={() => onSelect(lang.id)}
-            className={`relative p-5 rounded-xl border-2 text-left transition-all ${
-              selectedLanguage === lang.id
+            className={`relative p-5 rounded-xl border-2 text-left transition-all ${selectedLanguage === lang.id
                 ? 'border-accent bg-accent/5'
                 : 'border-border-subtle hover:border-text-muted bg-surface/50'
-            }`}
+              }`}
           >
             <div className="text-2xl mb-2">{lang.id === 'zh' ? '🇨🇳' : '🇺🇸'}</div>
             <div className="font-medium text-text-primary">{lang.native}</div>
@@ -374,36 +374,35 @@ function ThemeStep({
           <button
             key={theme.id}
             onClick={() => onSelect(theme.id)}
-            className={`relative p-4 rounded-xl border-2 text-left transition-all ${
-              selectedTheme === theme.id
+            className={`relative p-4 rounded-xl border-2 text-left transition-all ${selectedTheme === theme.id
                 ? 'border-accent bg-accent/5'
                 : 'border-border-subtle hover:border-text-muted bg-surface/50'
-            }`}
+              }`}
           >
             {/* 主题预览 */}
-            <div 
+            <div
               className="h-16 rounded-lg mb-3 border border-white/5 overflow-hidden"
               style={{ backgroundColor: `rgb(${theme.colors.background})` }}
             >
-              <div 
+              <div
                 className="h-3 w-full"
                 style={{ backgroundColor: `rgb(${theme.colors.surface})` }}
               />
               <div className="p-2 flex gap-1">
-                <div 
+                <div
                   className="w-2 h-2 rounded-full"
                   style={{ backgroundColor: `rgb(${theme.colors.accent})` }}
                 />
-                <div 
+                <div
                   className="flex-1 h-2 rounded"
                   style={{ backgroundColor: `rgb(${theme.colors.surface})` }}
                 />
               </div>
             </div>
-            
+
             <div className="font-medium text-sm text-text-primary">{theme.name}</div>
             <div className="text-xs text-text-muted capitalize">{theme.type}</div>
-            
+
             {selectedTheme === theme.id && (
               <div className="absolute top-2 right-2">
                 <Check className="w-4 h-4 text-accent" />
@@ -454,28 +453,26 @@ function ProviderStep({
           {providers.map(p => (
             <button
               key={p.name}
-              onClick={() => setConfig({ 
-                ...config, 
-                provider: p.name as any, 
+              onClick={() => setConfig({
+                ...config,
+                provider: p.name as any,
                 model: p.defaultModels[0],
                 baseUrl: undefined
               })}
-              className={`px-3 py-2.5 rounded-lg border text-sm transition-all ${
-                config.provider === p.name
+              className={`px-3 py-2.5 rounded-lg border text-sm transition-all ${config.provider === p.name
                   ? 'border-accent bg-accent/10 text-accent'
                   : 'border-border-subtle hover:border-text-muted text-text-muted bg-surface/50'
-              }`}
+                }`}
             >
               {p.displayName}
             </button>
           ))}
           <button
             onClick={() => setConfig({ ...config, provider: 'custom' as any, model: '' })}
-            className={`px-3 py-2.5 rounded-lg border text-sm transition-all ${
-              config.provider === 'custom'
+            className={`px-3 py-2.5 rounded-lg border text-sm transition-all ${config.provider === 'custom'
                 ? 'border-accent bg-accent/10 text-accent'
                 : 'border-border-subtle hover:border-text-muted text-text-muted bg-surface/50'
-            }`}
+              }`}
           >
             Custom
           </button>
@@ -588,8 +585,8 @@ function DataPathStep({
         </h2>
       </div>
       <p className="text-sm text-text-muted mb-8">
-        {isZh 
-          ? '选择保存应用配置和数据的目录。默认位置通常是最佳选择。' 
+        {isZh
+          ? '选择保存应用配置和数据的目录。默认位置通常是最佳选择。'
           : 'Choose where to save app configuration and data. The default location is usually the best choice.'}
       </p>
 
@@ -607,8 +604,8 @@ function DataPathStep({
               disabled={loading}
               className="px-4 py-2 bg-surface hover:bg-surface-hover border border-border-subtle rounded-lg text-sm text-text-primary transition-colors disabled:opacity-50 whitespace-nowrap"
             >
-              {loading 
-                ? (isZh ? '处理中...' : 'Processing...') 
+              {loading
+                ? (isZh ? '处理中...' : 'Processing...')
                 : (isZh ? '更改目录' : 'Change')}
             </button>
           </div>
@@ -616,8 +613,8 @@ function DataPathStep({
 
         <div className="p-4 bg-accent/5 rounded-xl border border-accent/20">
           <p className="text-xs text-text-muted">
-            💡 {isZh 
-              ? '提示：此目录将存储你的设置、会话历史和缓存数据。如果你使用云同步服务（如 OneDrive），可以选择同步目录来跨设备同步配置。' 
+            💡 {isZh
+              ? '提示：此目录将存储你的设置、会话历史和缓存数据。如果你使用云同步服务（如 OneDrive），可以选择同步目录来跨设备同步配置。'
               : 'Tip: This directory stores your settings, session history, and cache. If you use cloud sync (like OneDrive), you can choose a synced folder to sync settings across devices.'}
           </p>
         </div>
@@ -696,12 +693,12 @@ function CompleteStep({ isZh }: { isZh: boolean }) {
           <div className="absolute -inset-4 bg-status-success/10 rounded-full blur-xl -z-10 animate-pulse" />
         </div>
       </div>
-      
+
       <h2 className="text-2xl font-bold text-text-primary mb-3">
         {isZh ? '设置完成！' : 'All Set!'}
       </h2>
       <p className="text-text-muted max-w-md mx-auto leading-relaxed mb-8">
-        {isZh 
+        {isZh
           ? '你已经完成了基本设置。现在可以开始使用 Adnify 进行编程了！'
           : 'You\'ve completed the basic setup. Now you can start coding with Adnify!'}
       </p>

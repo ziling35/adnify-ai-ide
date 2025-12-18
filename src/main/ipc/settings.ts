@@ -15,7 +15,7 @@ export function registerSettingsHandlers(
   ipcMain.handle('settings:get', (_, key: string) => mainStore.get(key))
 
   // 设置值
-  ipcMain.handle('settings:set', (event, key: string, value: unknown) => {
+  ipcMain.handle('settings:set', (_event, key: string, value: unknown) => {
     mainStore.set(key, value)
 
     // 广播给所有窗口（排除发送者，或者由发送者自己处理）

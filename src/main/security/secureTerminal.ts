@@ -2,10 +2,10 @@
  * 安全的终端执行模块（替代原有 terminal.ts 中的高危功能）
  */
 
-import { ipcMain, BrowserWindow, dialog } from 'electron'
-import { exec, spawn, execSync } from 'child_process'
-import { securityManager, OperationType, PermissionLevel, checkWorkspacePermission } from './securityModule'
-import * as path from 'path'
+import { ipcMain, BrowserWindow } from 'electron'
+import { spawn, execSync } from 'child_process'
+import { securityManager, OperationType } from './securityModule'
+
 
 interface SecureShellRequest {
   command: string
@@ -203,8 +203,7 @@ export function registerSecureTerminalHandlers(
     if (requireConfirm) {
       const hasPermission = await securityManager.checkPermission(
         OperationType.SHELL_EXECUTE,
-        fullCommand,
-        { workspace: workspace.roots, cwd: targetPath }
+        fullCommand
       )
 
       if (!hasPermission) {
@@ -307,8 +306,7 @@ export function registerSecureTerminalHandlers(
     // 4. 权限检查
     const hasPermission = await securityManager.checkPermission(
       OperationType.GIT_EXEC,
-      `git ${fullCommand}`,
-      { workspace: workspace.roots, cwd }
+      `git ${fullCommand}`
     )
 
     if (!hasPermission) {
@@ -567,4 +565,3 @@ export function registerSecureTerminalHandlers(
   // Return cleanup function for use in app shutdown
   return cleanupTerminals
 }
-

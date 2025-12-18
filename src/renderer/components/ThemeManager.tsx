@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, ReactNode } from 'react';
 import { useStore } from '../store';
 import { ThemeName } from '../store/slices/themeSlice';
 
@@ -75,12 +75,16 @@ export const themes: Record<ThemeName, Record<string, string>> = {
     }
 };
 
-export const ThemeManager: React.FC = () => {
+interface ThemeManagerProps {
+    children: ReactNode;
+}
+
+export const ThemeManager: React.FC<ThemeManagerProps> = ({ children }) => {
     const currentTheme = useStore((state) => state.currentTheme) as ThemeName;
 
     useEffect(() => {
         const root = document.documentElement;
-        const themeVars = themes[currentTheme];
+        const themeVars = themes[currentTheme] || themes['adnify-dark'];
 
         Object.entries(themeVars).forEach(([key, value]: [string, string]) => {
             root.style.setProperty(key, value);
@@ -91,5 +95,5 @@ export const ThemeManager: React.FC = () => {
 
     }, [currentTheme]);
 
-    return null;
+    return <>{children}</>;
 };

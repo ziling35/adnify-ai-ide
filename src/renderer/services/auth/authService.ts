@@ -1,16 +1,18 @@
+
 // Auth service - placeholder for future implementation
 import type { AuthService, User, LoginCredentials, RegisterCredentials, AuthTokens } from './types'
 
 const AUTH_STORAGE_KEY = 'adnify_auth'
 
 class AuthServiceImpl implements AuthService {
+	// @ts-ignore
 	private baseUrl: string = ''  // Will be configured when backend is ready
 
 	setBaseUrl(url: string) {
 		this.baseUrl = url
 	}
 
-	async login(credentials: LoginCredentials): Promise<User> {
+	async login(_credentials: LoginCredentials): Promise<User> {
 		// TODO: Implement actual login when backend is ready
 		// const response = await fetch(`${this.baseUrl}/auth/login`, {
 		//   method: 'POST',
@@ -24,7 +26,7 @@ class AuthServiceImpl implements AuthService {
 		throw new Error('Authentication not yet implemented')
 	}
 
-	async register(credentials: RegisterCredentials): Promise<User> {
+	async register(_credentials: RegisterCredentials): Promise<User> {
 		// TODO: Implement actual registration
 		throw new Error('Registration not yet implemented')
 	}
@@ -54,14 +56,16 @@ class AuthServiceImpl implements AuthService {
 		}
 	}
 
-	async updateProfile(data: Partial<User>): Promise<User> {
+	async updateProfile(_data: Partial<User>): Promise<User> {
 		// TODO: Implement profile update
 		throw new Error('Profile update not yet implemented')
 	}
 
-	private saveTokens(tokens: AuthTokens, user: User) {
-		localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ tokens, user }))
+	// @ts-ignore
+	private saveTokens(_tokens: AuthTokens, _user: User) {
+		localStorage.setItem(AUTH_STORAGE_KEY, JSON.stringify({ tokens: _tokens, user: _user }))
 	}
 }
 
 export const authService = new AuthServiceImpl()
+

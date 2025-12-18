@@ -122,7 +122,7 @@ class PluginManager {
   // 创建插件 API
   private createPluginAPI(pluginId: string): PluginAPI {
     const plugin = this.plugins.get(pluginId)
-    
+
     return {
       registerSidebarView: (view: SidebarView) => {
         if (plugin) {
@@ -138,7 +138,7 @@ class PluginManager {
           this.commands.set(fullId, handler)
         }
       },
-      executeCommand: (id: string, ...args: unknown[]) => {
+      executeCommand: (id: string, ..._args: unknown[]) => {
         const handler = this.commands.get(id)
         if (handler) {
           handler()
@@ -185,7 +185,7 @@ class PluginManager {
   // 注册插件
   async registerPlugin(plugin: Plugin): Promise<boolean> {
     const { manifest } = plugin
-    
+
     if (this.plugins.has(manifest.id)) {
       console.warn(`Plugin ${manifest.id} is already registered`)
       return false
@@ -200,10 +200,10 @@ class PluginManager {
     }
 
     this.plugins.set(manifest.id, loadedPlugin)
-    
+
     // 自动激活
     await this.activatePlugin(manifest.id)
-    
+
     return true
   }
 
@@ -235,20 +235,20 @@ class PluginManager {
       if (plugin.instance?.deactivate) {
         await plugin.instance.deactivate()
       }
-      
+
       // 移除侧边栏视图
       plugin.sidebarViews.forEach(view => {
         const idx = this.sidebarViews.findIndex(v => v.id === view.id)
         if (idx !== -1) this.sidebarViews.splice(idx, 1)
       })
       plugin.sidebarViews = []
-      
+
       // 移除命令
       plugin.commands.forEach((_, key) => {
         this.commands.delete(key)
       })
       plugin.commands.clear()
-      
+
       plugin.isActive = false
       this.notifyListeners()
       return true

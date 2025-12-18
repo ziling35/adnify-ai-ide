@@ -244,11 +244,6 @@ export default function Editor() {
     // 启动 LSP 服务器（异步）
     const { workspacePath } = useStore.getState()
     if (workspacePath) {
-      // 设置工作区路径供 LSP 服务使用
-      import('../services/lspService').then(({ setWorkspacePath }) => {
-        setWorkspacePath(workspacePath)
-      })
-
       startLspServer(workspacePath).then((success) => {
         if (success) {
           console.log('[Editor] LSP server started')
@@ -750,7 +745,7 @@ export default function Editor() {
 
   // Keyboard shortcut for save
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
-    if (keybindingService.matches(e, 'editor.save')) {
+    if (keybindingService.matches(e.nativeEvent, 'editor.save')) {
       e.preventDefault()
       handleSave()
     }

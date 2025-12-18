@@ -27,11 +27,11 @@ export class ChunkerService {
    */
   chunkFile(filePath: string, content: string, workspacePath: string): CodeChunk[] {
     const ext = path.extname(filePath).slice(1).toLowerCase()
-    const relativePath = path.relative(workspacePath, filePath)
-    
+    // const relativePath = path.relative(workspacePath, filePath)
+
     // Calculate hash
     const fileHash = crypto.createHash('sha256').update(content).digest('hex')
-    
+
     // 简单的语言推断，仅用于标记
     const language = ext || 'text'
 
@@ -56,18 +56,18 @@ export class ChunkerService {
 
     // 如果文件很小，直接作为一块
     if (lines.length <= chunkSize * 1.5) {
-        return [{
-            id: this.generateId(filePath, baseLineNumber - 1),
-            filePath,
-            relativePath,
-            fileHash,
-            content,
-            startLine: baseLineNumber,
-            endLine: baseLineNumber + lines.length - 1,
-            type: 'file',
-            language,
-            symbols: [],
-        }]
+      return [{
+        id: this.generateId(filePath, baseLineNumber - 1),
+        filePath,
+        relativePath,
+        fileHash,
+        content,
+        startLine: baseLineNumber,
+        endLine: baseLineNumber + lines.length - 1,
+        type: 'file',
+        language,
+        symbols: [],
+      }]
     }
 
     for (let i = 0; i < lines.length; i += chunkSize - chunkOverlap) {

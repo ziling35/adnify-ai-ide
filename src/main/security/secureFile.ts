@@ -1,5 +1,5 @@
 import { ipcMain, dialog, shell } from 'electron'
-import * as fs from 'fs'
+
 import * as path from 'path'
 import { promises as fsPromises } from 'fs'
 import Store from 'electron-store'
@@ -18,11 +18,7 @@ const getWorkspaceSession = (): { configPath: string | null; roots: string[] } |
   return mainStore.get('lastWorkspaceSession', null) as { configPath: string | null; roots: string[] } | null
 }
 
-// 获取主窗口
-const getMainWindow = () => {
-  const win = (global as any).mainWindow
-  return win || null
-}
+
 
 // 读取带编码检测的文件
 async function readFileWithEncoding(filePath: string): Promise<string | null> {
@@ -53,25 +49,7 @@ async function readLargeFile(filePath: string, start: number, maxLength: number)
   }
 }
 
-// 计算目录大小
-async function calculateDirectorySize(dirPath: string): Promise<number> {
-  let total = 0
-  try {
-    const entries = await fsPromises.readdir(dirPath, { withFileTypes: true })
-    for (const entry of entries) {
-      const fullPath = path.join(dirPath, entry.name)
-      if (entry.isDirectory()) {
-        total += await calculateDirectorySize(fullPath)
-      } else {
-        const stat = await fsPromises.stat(fullPath)
-        total += stat.size
-      }
-    }
-  } catch {
-    // 忽略错误
-  }
-  return total
-}
+
 
 // 文件监听
 function setupFileWatcher(callback: (data: FileWatcherEvent) => void) {
