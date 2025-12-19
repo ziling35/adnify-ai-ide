@@ -22,6 +22,9 @@ import {
   AssistantPart,
   PendingChange,
   MessageCheckpoint,
+  // 类型守卫
+  isAssistantMessage,
+  isTextPart,
 } from './types'
 
 // ===== Store 类型 =====
@@ -246,29 +249,35 @@ export const useAgentStore = create<AgentStore>()(
           const thread = state.threads[threadId]
           if (!thread) return state
 
-          const messages = thread.messages.map(msg => {
-            if (msg.id === messageId && msg.role === 'assistant') {
-              const assistantMsg = msg as AssistantMessage
-              const newContent = assistantMsg.content + content
+          // 使用类型守卫替代类型断言，并优化更新逻辑
+          const messageIdx = thread.messages.findIndex(
+            msg => msg.id === messageId && isAssistantMessage(msg)
+          )
+          if (messageIdx === -1) return state
 
-              // 更新 parts：如果最后一个 part 是 text，追加内容；否则添加新的 text part
-              let newParts = [...assistantMsg.parts]
-              if (newParts.length > 0 && newParts[newParts.length - 1].type === 'text') {
-                const lastPart = newParts[newParts.length - 1] as { type: 'text'; content: string }
-                newParts[newParts.length - 1] = { type: 'text', content: lastPart.content + content }
-              } else {
-                newParts.push({ type: 'text', content })
-              }
+          const assistantMsg = thread.messages[messageIdx] as AssistantMessage
+          const newContent = assistantMsg.content + content
 
-              return { ...assistantMsg, content: newContent, parts: newParts }
-            }
-            return msg
-          })
+          // 优化 parts 更新：直接修改最后一个 text part 而不是复制整个数组
+          let newParts: AssistantPart[]
+          const lastPart = assistantMsg.parts[assistantMsg.parts.length - 1]
+
+          if (lastPart && isTextPart(lastPart)) {
+            // 只复制最后一个元素进行更新
+            newParts = [...assistantMsg.parts]
+            newParts[newParts.length - 1] = { type: 'text', content: lastPart.content + content }
+          } else {
+            newParts = [...assistantMsg.parts, { type: 'text', content }]
+          }
+
+          // 只更新需要更新的消息，避免遍历所有消息
+          const newMessages = [...thread.messages]
+          newMessages[messageIdx] = { ...assistantMsg, content: newContent, parts: newParts }
 
           return {
             threads: {
               ...state.threads,
-              [threadId]: { ...thread, messages, lastModified: Date.now() },
+              [threadId]: { ...thread, messages: newMessages, lastModified: Date.now() },
             },
           }
         })

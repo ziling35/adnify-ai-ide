@@ -289,6 +289,15 @@ export interface ElectronAPI {
     contentType?: string
     statusCode?: number
   }>
+  httpWebSearch: (query: string, maxResults?: number) => Promise<{
+    success: boolean
+    results?: Array<{
+      title: string
+      url: string
+      snippet: string
+    }>
+    error?: string
+  }>
 
   // Command Execution
   onExecuteCommand: (callback: (commandId: string) => void) => () => void

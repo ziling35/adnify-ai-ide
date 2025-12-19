@@ -6,40 +6,14 @@
 import { ToolDefinition, ToolApprovalType } from './types'
 import { validatePath, isSensitivePath } from '@/renderer/utils/pathUtils'
 import { pathToLspUri, lspUriToPath } from '@/renderer/services/lspService'
+import {
+  parseSearchReplaceBlocks,
+  applySearchReplaceBlocks,
+  calculateLineChanges,
+} from '@/renderer/utils/searchReplace'
 
-/**
- * 计算两个文本之间的行数变化
- * 使用简单的 LCS 算法计算实际增加和删除的行数
- */
-function calculateLineChanges(oldContent: string, newContent: string): { added: number; removed: number } {
-  if (!oldContent && !newContent) return { added: 0, removed: 0 }
-  if (!oldContent) return { added: newContent.split('\n').length, removed: 0 }
-  if (!newContent) return { added: 0, removed: oldContent.split('\n').length }
-
-  const oldLines = oldContent.split('\n')
-  const newLines = newContent.split('\n')
-
-  // 使用简单的 LCS 长度计算
-  const m = oldLines.length
-  const n = newLines.length
-  const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0))
-
-  for (let i = 1; i <= m; i++) {
-    for (let j = 1; j <= n; j++) {
-      if (oldLines[i - 1] === newLines[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1] + 1
-      } else {
-        dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
-      }
-    }
-  }
-
-  const lcsLength = dp[m][n]
-  return {
-    added: n - lcsLength,    // 新增的行 = 新文件行数 - 公共行数
-    removed: m - lcsLength,  // 删除的行 = 旧文件行数 - 公共行数
-  }
-}
+// calculateLineChanges, parseSearchReplaceBlocks, applySearchReplaceBlocks
+// 现在从 @/renderer/utils/searchReplace 统一模块导入
 
 // ===== 工具定义 =====
 
@@ -334,65 +308,9 @@ export const TOOL_DISPLAY_NAMES: Record<string, string> = {
 // 写入类工具（需要显示代码预览）
 export const WRITE_TOOLS = ['edit_file', 'write_file', 'create_file_or_folder']
 
-// ===== Search/Replace 解析 =====
 
-interface SearchReplaceBlock {
-  search: string
-  replace: string
-}
+// Search/Replace 函数从 @/renderer/utils/searchReplace 导入
 
-function parseSearchReplaceBlocks(blocksStr: string): SearchReplaceBlock[] {
-  const blocks: SearchReplaceBlock[] = []
-  const regex = /<<<<<<< SEARCH\n([\s\S]*?)\n=======\n([\s\S]*?)\n>>>>>>> REPLACE/g
-  let match
-
-  while ((match = regex.exec(blocksStr)) !== null) {
-    blocks.push({ search: match[1], replace: match[2] })
-  }
-
-  return blocks
-}
-
-function applySearchReplaceBlocks(
-  content: string,
-  blocks: SearchReplaceBlock[]
-): { newContent: string; appliedCount: number; errors: string[] } {
-  let newContent = content
-  let appliedCount = 0
-  const errors: string[] = []
-
-  for (const block of blocks) {
-    if (newContent.includes(block.search)) {
-      newContent = newContent.replace(block.search, block.replace)
-      appliedCount++
-    } else {
-      // 尝试模糊匹配（忽略行尾空白）
-      const normalizedSearch = block.search.split('\n').map(l => l.trimEnd()).join('\n')
-      const lines = newContent.split('\n')
-      const searchLines = block.search.split('\n')
-      let found = false
-
-      for (let i = 0; i <= lines.length - searchLines.length; i++) {
-        const slice = lines.slice(i, i + searchLines.length)
-        const sliceNormalized = slice.map(l => l.trimEnd()).join('\n')
-
-        if (sliceNormalized === normalizedSearch) {
-          lines.splice(i, searchLines.length, ...block.replace.split('\n'))
-          newContent = lines.join('\n')
-          appliedCount++
-          found = true
-          break
-        }
-      }
-
-      if (!found) {
-        errors.push(`Search block not found: "${block.search.slice(0, 50)}..."`)
-      }
-    }
-  }
-
-  return { newContent, appliedCount, errors }
-}
 
 // ===== 目录树构建 =====
 

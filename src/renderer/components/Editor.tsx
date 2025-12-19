@@ -1059,6 +1059,7 @@ export default function Editor() {
             {/* Monaco Diff Editor */}
             <div className="flex-1">
               <DiffEditor
+                key={`diff-${activeDiff.filePath}-${activeDiff.original?.length || 0}-${activeDiff.modified?.length || 0}`}
                 height="100%"
                 language={getLanguage(activeDiff.filePath)}
                 original={activeDiff.original}

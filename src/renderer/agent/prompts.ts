@@ -7,10 +7,14 @@ import { ChatMode } from '../store'
 import { rulesService } from './rulesService'
 import { FILE_LIMITS } from '../../shared/constants'
 
-// Search/Replace 块格式 (Git 风格，LLM 更熟悉)
-export const ORIGINAL = '<<<<<<< SEARCH'
-export const DIVIDER = '======='
-export const FINAL = '>>>>>>> REPLACE'
+// Search/Replace 块格式 - 从统一模块导入
+export {
+	SEARCH_MARKER as ORIGINAL,
+	DIVIDER_MARKER as DIVIDER,
+	REPLACE_MARKER as FINAL,
+	parseSearchReplaceBlocks,
+	applySearchReplaceBlocks,
+} from '../utils/searchReplace'
 
 // 限制常量（从共享配置导入）
 export const MAX_FILE_CHARS = FILE_LIMITS.MAX_FILE_CHARS
@@ -69,12 +73,14 @@ Parameters:
 ${searchReplaceBlockTemplate}
 
 **RULES:**
-1. SEARCH block must EXACTLY match existing code (including whitespace and indentation)
-2. Each SEARCH block must be unique in the file
-3. You can use multiple blocks for multiple changes
-4. Keep SEARCH blocks as small as possible while being unique
-5. Include enough context lines to make the match unique
-6. Each marker must be on its own line`,
+1. SEARCH block must EXACTLY match existing code (including whitespace and indentation).
+2. Each SEARCH block must be unique in the file.
+3. You can use multiple blocks for multiple changes.
+4. **Keep SEARCH blocks as small as possible** while being unique. Smaller blocks are more robust to minor formatting differences.
+5. Include enough context lines to make the match unique.
+6. Each marker must be on its own line.
+7. **Indentation**: While the system handles minor indentation differences, try to match the original indentation as closely as possible.
+8. **Newlines**: Ensure you include the correct number of newlines between markers and content.`,
 
 	write_file: `Write or overwrite entire file content. Use edit_file for partial changes.
 Parameters:
@@ -189,15 +195,8 @@ export async function buildSystemPrompt(
 
 When making changes:
 1. First, write a brief explanation of what you will do (1-2 sentences)
-2. Then call the tool(s)
+2. Then call the tool(s) using the native tool_calls API
 3. After tools complete, write a brief summary
-
-Example:
-\`\`\`
-I'll fix the bug in the handleSubmit function by adding null check.
-[tool: edit_file]
-Done. Added null check to prevent the crash when data is undefined.
-\`\`\`
 
 ### Code Changes
 - **ALWAYS use tools** (edit_file, write_file) to modify files
@@ -296,69 +295,4 @@ export function formatToolResult(
 		return result
 	}
 	return `Error executing ${toolName}: ${result}`
-}
-
-// 解析 Search/Replace 块
-export function parseSearchReplaceBlocks(blocksStr: string): Array<{ search: string; replace: string }> {
-	const blocks: Array<{ search: string; replace: string }> = []
-	const regex = new RegExp(`${ORIGINAL}\\n([\\s\\S]*?)\\n${DIVIDER}\\n([\\s\\S]*?)\\n${FINAL}`, 'g')
-	let match
-
-	while ((match = regex.exec(blocksStr)) !== null) {
-		blocks.push({
-			search: match[1],
-			replace: match[2],
-		})
-	}
-
-	return blocks
-}
-
-// 应用 Search/Replace 块
-export function applySearchReplaceBlocks(
-	content: string,
-	blocks: Array<{ search: string; replace: string }>
-): { newContent: string; appliedCount: number; errors: string[] } {
-	let newContent = content
-	let appliedCount = 0
-	const errors: string[] = []
-
-	for (const block of blocks) {
-		if (newContent.includes(block.search)) {
-			newContent = newContent.replace(block.search, block.replace)
-			appliedCount++
-		} else {
-			// 尝试模糊匹配（忽略行尾空白）
-			const normalizedSearch = block.search.split('\n').map(l => l.trimEnd()).join('\n')
-			const normalizedContent = newContent.split('\n').map(l => l.trimEnd()).join('\n')
-
-			if (normalizedContent.includes(normalizedSearch)) {
-				// 找到原始位置
-				const lines = newContent.split('\n')
-				const searchLines = block.search.split('\n')
-				let found = false
-
-				for (let i = 0; i <= lines.length - searchLines.length; i++) {
-					const slice = lines.slice(i, i + searchLines.length)
-					const sliceNormalized = slice.map(l => l.trimEnd()).join('\n')
-
-					if (sliceNormalized === normalizedSearch) {
-						lines.splice(i, searchLines.length, ...block.replace.split('\n'))
-						newContent = lines.join('\n')
-						appliedCount++
-						found = true
-						break
-					}
-				}
-
-				if (!found) {
-					errors.push(`Could not find exact match for: "${block.search.slice(0, 50)}..."`)
-				}
-			} else {
-				errors.push(`Search block not found: "${block.search.slice(0, 50)}..."`)
-			}
-		}
-	}
-
-	return { newContent, appliedCount, errors }
 }

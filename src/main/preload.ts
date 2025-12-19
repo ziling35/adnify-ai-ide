@@ -21,9 +21,15 @@ interface SearchFileResult {
 }
 
 interface LLMStreamChunk {
-  type: 'text' | 'reasoning' | 'error'
+  type: 'text' | 'reasoning' | 'error' | 'tool_call_start' | 'tool_call_delta' | 'tool_call_end' | 'tool_call'
   content?: string
   error?: string
+  toolCallDelta?: {
+    id?: string
+    name?: string
+    args?: string
+  }
+  toolCall?: LLMToolCall
 }
 
 interface LLMToolCall {
