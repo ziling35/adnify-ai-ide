@@ -4,6 +4,8 @@
  * 双重存储：localStorage（快速读取）+ 文件（持久化备份）
  */
 
+import { IGNORED_DIRECTORIES } from '../../shared/languages'
+
 export interface EditorConfig {
   // 编辑器外观
   fontSize: number
@@ -118,20 +120,8 @@ export const defaultEditorConfig: EditorConfig = {
     maxSingleFileChars: 6000, // 单文件最多 6000 字符
   },
 
-  // 忽略的目录
-  ignoredDirectories: [
-    'node_modules',
-    'dist',
-    'build',
-    '.git',
-    '.next',
-    'coverage',
-    '__pycache__',
-    '.cache',
-    'out',
-    '.vscode',
-    '.idea',
-  ],
+  // 忽略的目录（使用共享常量）
+  ignoredDirectories: [...IGNORED_DIRECTORIES],
 }
 
 // 存储 key

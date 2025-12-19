@@ -5,18 +5,19 @@
 
 import { ChatMode } from '../store'
 import { rulesService } from './rulesService'
+import { FILE_LIMITS } from '../../shared/constants'
 
 // Search/Replace 块格式 (Git 风格，LLM 更熟悉)
 export const ORIGINAL = '<<<<<<< SEARCH'
 export const DIVIDER = '======='
 export const FINAL = '>>>>>>> REPLACE'
 
-// 限制常量（与 editorConfig.ts 保持一致）
-export const MAX_FILE_CHARS = 60000
-export const MAX_DIR_ITEMS = 150
-export const MAX_SEARCH_RESULTS = 30
-export const MAX_TERMINAL_OUTPUT = 3000
-export const MAX_CONTEXT_CHARS = 30000
+// 限制常量（从共享配置导入）
+export const MAX_FILE_CHARS = FILE_LIMITS.MAX_FILE_CHARS
+export const MAX_DIR_ITEMS = FILE_LIMITS.MAX_DIR_ITEMS
+export const MAX_SEARCH_RESULTS = FILE_LIMITS.MAX_SEARCH_RESULTS
+export const MAX_TERMINAL_OUTPUT = FILE_LIMITS.MAX_TERMINAL_OUTPUT
+export const MAX_CONTEXT_CHARS = FILE_LIMITS.MAX_CONTEXT_CHARS
 
 // Search/Replace 块模板
 const searchReplaceBlockTemplate = `\
@@ -161,7 +162,7 @@ export async function buildSystemPrompt(
 
 	// 获取提示词模板
 	const { getPromptTemplateById, getDefaultPromptTemplate } = await import('./promptTemplates')
-	const template = promptTemplateId 
+	const template = promptTemplateId
 		? getPromptTemplateById(promptTemplateId) || getDefaultPromptTemplate()
 		: getDefaultPromptTemplate()
 

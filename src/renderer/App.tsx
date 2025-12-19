@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useStore } from './store'
 import TitleBar from './components/TitleBar'
 import Sidebar from './components/Sidebar'
@@ -11,8 +11,6 @@ import KeyboardShortcuts from './components/KeyboardShortcuts'
 import QuickOpen from './components/QuickOpen'
 import ActivityBar from './components/ActivityBar'
 import StatusBar from './components/StatusBar'
-import ComposerPanel from './components/ComposerPanel'
-import OnboardingWizard from './components/OnboardingWizard'
 import { ToastProvider, useToast, setGlobalToast } from './components/Toast'
 import { GlobalConfirmDialog } from './components/ConfirmDialog'
 import { ErrorBoundary } from './components/ErrorBoundary'
@@ -26,7 +24,12 @@ import { checkpointService } from './agent/checkpointService'
 import { useAgentStore } from './agent/core/AgentStore'
 import { keybindingService } from './services/keybindingService'
 import { registerCoreCommands } from './config/commands'
+import { LAYOUT_LIMITS } from '../shared/constants'
 import noiseSvg from './assets/images/noise.svg'
+
+// 懒加载大组件以优化首屏性能
+const ComposerPanel = lazy(() => import('./components/ComposerPanel'))
+const OnboardingWizard = lazy(() => import('./components/OnboardingWizard'))
 
   // 暴露 store 给插件系统
   ; (window as any).__ADNIFY_STORE__ = { getState: () => useStore.getState() }
@@ -195,20 +198,20 @@ function AppContent() {
     return cleanup
   }, [])
 
-  // Resize Logic
+  // Resize Logic - 使用共享常量
   useEffect(() => {
     if (!isResizingSidebar && !isResizingChat) return
 
     const handleMouseMove = (e: MouseEvent) => {
       if (isResizingSidebar) {
-        const newWidth = e.clientX - 48 // 48 is ActivityBar width
-        if (newWidth > 150 && newWidth < 600) {
+        const newWidth = e.clientX - LAYOUT_LIMITS.ACTIVITY_BAR_WIDTH
+        if (newWidth > LAYOUT_LIMITS.SIDEBAR_MIN_WIDTH && newWidth < LAYOUT_LIMITS.SIDEBAR_MAX_WIDTH) {
           setSidebarWidth(newWidth)
         }
       }
       if (isResizingChat) {
         const newWidth = window.innerWidth - e.clientX
-        if (newWidth > 300 && newWidth < 800) {
+        if (newWidth > LAYOUT_LIMITS.CHAT_MIN_WIDTH && newWidth < LAYOUT_LIMITS.CHAT_MAX_WIDTH) {
           setChatWidth(newWidth)
         }
       }
@@ -355,10 +358,14 @@ function AppContent() {
         <QuickOpen onClose={() => setShowQuickOpen(false)} />
       )}
       {showComposer && (
-        <ComposerPanel onClose={() => setShowComposer(false)} />
+        <Suspense fallback={null}>
+          <ComposerPanel onClose={() => setShowComposer(false)} />
+        </Suspense>
       )}
       {showOnboarding && isInitialized && (
-        <OnboardingWizard onComplete={() => setShowOnboarding(false)} />
+        <Suspense fallback={null}>
+          <OnboardingWizard onComplete={() => setShowOnboarding(false)} />
+        </Suspense>
       )}
       {showAbout && <AboutDialog onClose={() => setShowAbout(false)} />}
       <GlobalConfirmDialog />

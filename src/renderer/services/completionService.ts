@@ -12,6 +12,7 @@
 
 import { useStore } from '../store'
 import { getEditorConfig } from '../config/editorConfig'
+import { FIM_CAPABLE_MODELS, getLanguageFromPath as sharedGetLanguageFromPath } from '../../shared/languages'
 
 // ============ Interfaces ============
 
@@ -69,16 +70,8 @@ export interface CompletionOptions {
   maxCandidates: number  // Max candidates to generate
 }
 
-// FIM-capable models
-const FIM_MODELS = [
-  'deepseek-coder',
-  'codellama',
-  'starcoder',
-  'code-llama',
-  'deepseek',
-  'qwen-coder',
-  'yi-coder',
-]
+// FIM-capable models (from shared config)
+const FIM_MODELS = FIM_CAPABLE_MODELS
 
 
 // 从配置获取默认选项
@@ -221,22 +214,8 @@ function debounce<T extends (...args: Parameters<T>) => ReturnType<T>>(
 
 
 // ============ Language Detection ============
-
-const LANGUAGE_MAP: Record<string, string> = {
-  ts: 'typescript', tsx: 'typescript',
-  js: 'javascript', jsx: 'javascript', mjs: 'javascript', cjs: 'javascript',
-  py: 'python', rs: 'rust', go: 'go', java: 'java',
-  cpp: 'cpp', c: 'c', h: 'c', hpp: 'cpp',
-  css: 'css', scss: 'scss', less: 'less',
-  html: 'html', htm: 'html', vue: 'html', svelte: 'html',
-  json: 'json', yaml: 'yaml', yml: 'yaml',
-  md: 'markdown', sql: 'sql', sh: 'shell', bash: 'shell',
-}
-
-function getLanguageFromPath(path: string): string {
-  const ext = path.split('.').pop()?.toLowerCase() || ''
-  return LANGUAGE_MAP[ext] || 'plaintext'
-}
+// Use shared language configuration
+const getLanguageFromPath = sharedGetLanguageFromPath
 
 // ============ Import Analysis ============
 

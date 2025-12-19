@@ -4,6 +4,7 @@
  */
 
 import { useStore } from '../store'
+import { EXTENSION_TO_LANGUAGE, LSP_SUPPORTED_LANGUAGES } from '../../shared/languages'
 
 // 文档版本追踪
 const documentVersions = new Map<string, number>()
@@ -37,33 +38,14 @@ export function getFileWorkspaceRoot(filePath: string): string | null {
  */
 export function getLanguageId(filePath: string): string {
   const ext = filePath.split('.').pop()?.toLowerCase() || ''
-  const languageMap: Record<string, string> = {
-    ts: 'typescript',
-    tsx: 'typescriptreact',
-    js: 'javascript',
-    jsx: 'javascriptreact',
-    mjs: 'javascript',
-    cjs: 'javascript',
-    html: 'html',
-    htm: 'html',
-    css: 'css',
-    scss: 'scss',
-    less: 'less',
-    json: 'json',
-    jsonc: 'jsonc',
-  }
-  return languageMap[ext] || 'plaintext'
+  return EXTENSION_TO_LANGUAGE[ext] || 'plaintext'
 }
 
 /**
  * 检查语言是否支持 LSP
  */
 export function isLanguageSupported(languageId: string): boolean {
-  const supported = [
-    'typescript', 'typescriptreact', 'javascript', 'javascriptreact',
-    'html', 'css', 'scss', 'less', 'json', 'jsonc',
-  ]
-  return supported.includes(languageId)
+  return (LSP_SUPPORTED_LANGUAGES as readonly string[]).includes(languageId)
 }
 
 /**

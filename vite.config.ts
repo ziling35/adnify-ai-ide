@@ -95,6 +95,10 @@ export default defineConfig({
 					'state': ['zustand'],
 					// UI 图标
 					'icons': ['lucide-react'],
+					// 终端相关 - 懒加载优化
+					'terminal': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-webgl', '@xterm/addon-web-links'],
+					// Markdown 渲染 - 懒加载优化
+					'markdown': ['react-markdown', 'react-syntax-highlighter'],
 				},
 			},
 		},

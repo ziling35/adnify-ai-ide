@@ -2,6 +2,7 @@
  * 设置相关状态切片
  */
 import { StateCreator } from 'zustand'
+import { SECURITY_DEFAULTS } from '../../../shared/constants'
 
 export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'groq' | 'mistral' | 'ollama' | 'custom'
 
@@ -77,11 +78,12 @@ const defaultProviderConfigs: Record<string, ProviderModelConfig> = {
   custom: { customModels: [] },
 }
 
+// 使用共享常量作为默认安全设置
 const defaultSecuritySettings: SecuritySettings = {
   enablePermissionConfirm: true,
   enableAuditLog: true,
   strictWorkspaceMode: true,
-  allowedShellCommands: ['npm', 'yarn', 'pnpm', 'node', 'npx', 'git', 'ls', 'cat', 'echo', 'pwd'],
+  allowedShellCommands: [...SECURITY_DEFAULTS.SHELL_COMMANDS],
   showSecurityWarnings: true,
 }
 
