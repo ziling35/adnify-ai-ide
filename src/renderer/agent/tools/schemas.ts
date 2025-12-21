@@ -44,9 +44,15 @@ export const EditFileSchema = z.object({
 }).refine(
     data => {
         const blocks = data.search_replace_blocks
-        // 更宽容的验证：检查是否包含 SEARCH/REPLACE 标记（忽略空格变体）
-        const hasSearch = /<<<+\s*SEARCH/i.test(blocks)
-        const hasReplace = />>>+\s*REPLACE/i.test(blocks)
+        // 更宽容的验证：接受多种格式变体
+        // 1. 标准格式: <<<<<<< SEARCH ... ======= ... >>>>>>> REPLACE
+        // 2. 带空格变体: <<< SEARCH, >>> REPLACE
+        // 3. 不同数量的角括号: <<<<< SEARCH, >>>>> REPLACE
+        // 4. 忽略大小写
+        const hasSearch = /<{3,}\s*SEARCH/i.test(blocks)
+        const hasReplace = />{3,}\s*REPLACE/i.test(blocks)
+
+        // 只要有 SEARCH 和 REPLACE 标记就通过
         return hasSearch && hasReplace
     },
     { message: 'Invalid SEARCH/REPLACE block format. Required format: <<<<<<< SEARCH\\n...\\n=======\\n...\\n>>>>>>> REPLACE' }

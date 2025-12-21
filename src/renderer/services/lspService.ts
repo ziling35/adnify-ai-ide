@@ -163,6 +163,22 @@ export async function didCloseDocument(filePath: string): Promise<void> {
 }
 
 /**
+ * 通知服务器文档已保存
+ */
+export async function didSaveDocument(filePath: string, content?: string): Promise<void> {
+  const uri = pathToLspUri(filePath)
+  const languageId = getLanguageId(filePath)
+  if (!isLanguageSupported(languageId)) return
+
+  const workspacePath = getFileWorkspaceRoot(filePath)
+  await window.electronAPI.lspDidSave?.({
+    uri,
+    text: content, // 可选：一些 LSP 需要保存时的文本内容
+    workspacePath,
+  } as any)
+}
+
+/**
  * 跳转到定义
  */
 export async function goToDefinition(

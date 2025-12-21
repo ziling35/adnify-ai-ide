@@ -4,7 +4,6 @@
  */
 
 import { useStore } from '../store'
-import { getEditorConfig } from '../config/editorConfig'
 import { terminalService } from './terminalService'
 import { ignoreService } from '../services/ignoreService'
 
@@ -36,15 +35,15 @@ export interface ContextStats {
 	terminalChars: number
 }
 
-// 获取配置的限制值
+// 获取配置的限制值（从统一的 agentConfig 读取）
 const getContextLimits = () => {
-	const config = getEditorConfig()
+	const { agentConfig } = useStore.getState()
 	return {
-		maxContextChars: config.ai.maxContextChars,
-		maxFiles: config.ai.maxContextFiles,
-		maxSemanticResults: config.ai.maxSemanticResults,
-		maxTerminalChars: config.ai.maxTerminalChars,
-		maxSingleFileChars: config.ai.maxSingleFileChars,
+		maxContextChars: agentConfig.maxTotalContextChars,
+		maxFiles: agentConfig.maxContextFiles,
+		maxSemanticResults: agentConfig.maxSemanticResults,
+		maxTerminalChars: agentConfig.maxTerminalChars,
+		maxSingleFileChars: agentConfig.maxSingleFileChars,
 	}
 }
 
@@ -588,7 +587,7 @@ export async function collectContext(
 		fileCount: files.length + fileItems.length,
 		maxFiles: limits.maxFiles,
 		messageCount: 0, // 由 useAgent 填充
-		maxMessages: getEditorConfig().ai.maxHistoryMessages,
+		maxMessages: useStore.getState().agentConfig.maxHistoryMessages,
 		semanticResultCount: semanticResults.length,
 		terminalChars,
 	}

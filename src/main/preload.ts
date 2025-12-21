@@ -237,6 +237,7 @@ export interface ElectronAPI {
   lspDidOpen: (params: { uri: string; languageId: string; version: number; text: string; workspacePath?: string | null }) => Promise<void>
   lspDidChange: (params: { uri: string; version: number; text: string; workspacePath?: string | null }) => Promise<void>
   lspDidClose: (params: { uri: string; workspacePath?: string | null }) => Promise<void>
+  lspDidSave: (params: { uri: string; text?: string; workspacePath?: string | null }) => Promise<void>
   lspDefinition: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
   lspTypeDefinition: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
   lspImplementation: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<any>
@@ -392,6 +393,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   lspDidOpen: (params: any) => ipcRenderer.invoke('lsp:didOpen', params),
   lspDidChange: (params: any) => ipcRenderer.invoke('lsp:didChange', params),
   lspDidClose: (params: any) => ipcRenderer.invoke('lsp:didClose', params),
+  lspDidSave: (params: any) => ipcRenderer.invoke('lsp:didSave', params),
   lspDefinition: (params: any) => ipcRenderer.invoke('lsp:definition', params),
   lspTypeDefinition: (params: any) => ipcRenderer.invoke('lsp:typeDefinition', params),
   lspImplementation: (params: any) => ipcRenderer.invoke('lsp:implementation', params),

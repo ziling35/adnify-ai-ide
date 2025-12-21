@@ -73,13 +73,13 @@ export default function SettingsModal() {
     setLocalAutoApprove(autoApprove)
     setLocalPromptTemplateId(promptTemplateId)
     // 加载设置
-    // 注意：不再加载 editorSettings，完全依赖 editorConfig
-    window.electronAPI.getSetting('aiInstructions').then(s => {
-      if (s) setAiInstructions(s as string)
-    })
-    window.electronAPI.getSetting('providerConfigs').then(s => {
-      if (s) {
-        Object.entries(s as Record<string, ProviderModelConfig>).forEach(([id, config]) => {
+    // 从统一的 app-settings 加载 aiInstructions 和 providerConfigs
+    window.electronAPI.getSetting('app-settings').then((settings: any) => {
+      if (settings?.aiInstructions) {
+        setAiInstructions(settings.aiInstructions)
+      }
+      if (settings?.providerConfigs) {
+        Object.entries(settings.providerConfigs as Record<string, ProviderModelConfig>).forEach(([id, config]) => {
           setProviderConfig(id, config)
         })
       }
@@ -87,24 +87,25 @@ export default function SettingsModal() {
   }, [llmConfig, language, autoApprove, promptTemplateId]) // 注意：这里不依赖 setProviderConfig 以避免循环，虽然它通常是稳定的
 
   const handleSave = async () => {
+    // 更新 Store 状态
     setLLMConfig(localConfig)
     setLanguage(localLanguage)
     setAutoApprove(localAutoApprove)
     setPromptTemplateId(localPromptTemplateId)
-    await window.electronAPI.setSetting('llmConfig', localConfig)
-    await window.electronAPI.setSetting('language', localLanguage)
-    await window.electronAPI.setSetting('autoApprove', localAutoApprove)
-    await window.electronAPI.setSetting('promptTemplateId', localPromptTemplateId)
-    await window.electronAPI.setSetting('editorSettings', editorSettings)
-    await window.electronAPI.setSetting('aiInstructions', aiInstructions)
-    // 保存 Agent 配置
     setAgentConfig(localAgentConfig)
-    await window.electronAPI.setSetting('agentConfig', localAgentConfig)
-    // 保存 providerConfigs (它在 Store 中已经是新的了，因为我们直接修改了 store)
-    // 但实际上我们在 ProviderSettings 组件中修改了 store 吗？
-    // 是的，我们将把 addModel/removeModel 传递给子组件，它们会直接修改 Store。
-    // 所以这里我们需要把 Store 中的 providerConfigs 保存到后端。
-    await window.electronAPI.setSetting('providerConfigs', providerConfigs)
+
+    // 统一保存所有设置到 app-settings
+    await window.electronAPI.setSetting('app-settings', {
+      llmConfig: localConfig,
+      language: localLanguage,
+      autoApprove: localAutoApprove,
+      promptTemplateId: localPromptTemplateId,
+      agentConfig: localAgentConfig,
+      providerConfigs: providerConfigs,
+      editorSettings: editorSettings,
+      aiInstructions: aiInstructions,
+      onboardingCompleted: true,
+    })
 
     // 保存编辑器配置（localStorage + 文件双重存储）
     saveEditorConfig({
@@ -1021,6 +1022,66 @@ function AgentSettings({
               <p className="text-xs text-text-muted mt-1">
                 {language === 'zh' ? '总上下文最大字符数' : 'Max total context chars'}
               </p>
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div>
+              <label className="text-sm font-medium text-text-primary block mb-2">
+                {language === 'zh' ? '最大上下文文件数' : 'Max Context Files'}
+              </label>
+              <Input
+                type="number"
+                value={agentConfig.maxContextFiles ?? 6}
+                onChange={(e) => setAgentConfig({ ...agentConfig, maxContextFiles: parseInt(e.target.value) || 6 })}
+                min={1}
+                max={20}
+                step={1}
+                className="w-full"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-text-primary block mb-2">
+                {language === 'zh' ? '语义搜索结果数' : 'Semantic Search Results'}
+              </label>
+              <Input
+                type="number"
+                value={agentConfig.maxSemanticResults ?? 5}
+                onChange={(e) => setAgentConfig({ ...agentConfig, maxSemanticResults: parseInt(e.target.value) || 5 })}
+                min={1}
+                max={20}
+                step={1}
+                className="w-full"
+              />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <div>
+              <label className="text-sm font-medium text-text-primary block mb-2">
+                {language === 'zh' ? '终端输出字符限制' : 'Terminal Char Limit'}
+              </label>
+              <Input
+                type="number"
+                value={agentConfig.maxTerminalChars ?? 3000}
+                onChange={(e) => setAgentConfig({ ...agentConfig, maxTerminalChars: parseInt(e.target.value) || 3000 })}
+                min={1000}
+                max={10000}
+                step={500}
+                className="w-full"
+              />
+            </div>
+            <div>
+              <label className="text-sm font-medium text-text-primary block mb-2">
+                {language === 'zh' ? '单文件字符限制' : 'Single File Char Limit'}
+              </label>
+              <Input
+                type="number"
+                value={agentConfig.maxSingleFileChars ?? 6000}
+                onChange={(e) => setAgentConfig({ ...agentConfig, maxSingleFileChars: parseInt(e.target.value) || 6000 })}
+                min={2000}
+                max={30000}
+                step={1000}
+                className="w-full"
+              />
             </div>
           </div>
         </div>

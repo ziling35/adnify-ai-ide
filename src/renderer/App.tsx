@@ -92,25 +92,37 @@ function AppContent() {
         await themeManager.init()
 
         // 检查是否首次使用
-        const onboardingCompleted = await window.electronAPI.getSetting('onboardingCompleted') as boolean | undefined
-        const hasExistingConfig = await window.electronAPI.getSetting('llmConfig') as object | undefined
+        const savedSettings = await window.electronAPI.getSetting('app-settings') as any
+        const onboardingCompleted = savedSettings?.onboardingCompleted
+        const hasExistingConfig = !!savedSettings?.llmConfig?.apiKey
 
         updateLoaderStatus('Loading settings...')
-        const savedConfig = await window.electronAPI.getSetting('llmConfig')
-        if (savedConfig) {
-          setLLMConfig(savedConfig)
-        }
-        const savedLanguage = await window.electronAPI.getSetting('language')
-        if (savedLanguage) {
-          setLanguage(savedLanguage as 'en' | 'zh')
-        }
-        const savedAutoApprove = await window.electronAPI.getSetting('autoApprove')
-        if (savedAutoApprove) {
-          setAutoApprove(savedAutoApprove)
-        }
-        const savedPromptTemplateId = await window.electronAPI.getSetting('promptTemplateId')
-        if (savedPromptTemplateId) {
-          setPromptTemplateId(savedPromptTemplateId as string)
+
+        // 从统一的 app-settings 加载设置
+        if (savedSettings) {
+          if (savedSettings.llmConfig) setLLMConfig(savedSettings.llmConfig)
+          if (savedSettings.language) setLanguage(savedSettings.language as 'en' | 'zh')
+          if (savedSettings.autoApprove) setAutoApprove(savedSettings.autoApprove)
+          if (savedSettings.promptTemplateId) setPromptTemplateId(savedSettings.promptTemplateId as string)
+          if (savedSettings.agentConfig) {
+            const { setAgentConfig } = useStore.getState()
+            setAgentConfig(savedSettings.agentConfig)
+          }
+        } else {
+          // 向后兼容：从旧的独立 key 加载
+          const savedConfig = await window.electronAPI.getSetting('llmConfig')
+          if (savedConfig) setLLMConfig(savedConfig)
+          const savedLanguage = await window.electronAPI.getSetting('language')
+          if (savedLanguage) setLanguage(savedLanguage as 'en' | 'zh')
+          const savedAutoApprove = await window.electronAPI.getSetting('autoApprove')
+          if (savedAutoApprove) setAutoApprove(savedAutoApprove)
+          const savedPromptTemplateId = await window.electronAPI.getSetting('promptTemplateId')
+          if (savedPromptTemplateId) setPromptTemplateId(savedPromptTemplateId as string)
+          const savedAgentConfig = await window.electronAPI.getSetting('agentConfig')
+          if (savedAgentConfig) {
+            const { setAgentConfig } = useStore.getState()
+            setAgentConfig(savedAgentConfig as any)
+          }
         }
 
         // 加载保存的主题
@@ -198,6 +210,37 @@ function AppContent() {
   useEffect(() => {
     const cleanup = initWorkspaceStateSync()
     return cleanup
+  }, [])
+
+  // 监听文件变化，自动刷新已打开的文件
+  useEffect(() => {
+    const unsubscribe = window.electronAPI.onFileChanged(async (event) => {
+      if (event.event !== 'update') return // 只处理文件修改事件
+
+      const { openFiles, reloadFileFromDisk } = useStore.getState()
+      const openFile = openFiles.find(f => f.path === event.path)
+
+      if (!openFile) return // 文件未打开，忽略
+
+      // 读取最新内容
+      const newContent = await window.electronAPI.readFile(event.path)
+      if (newContent === null) return
+
+      if (openFile.isDirty) {
+        // 文件有未保存更改，显示冲突提示
+        const shouldReload = confirm(
+          `文件 "${event.path.split(/[\\/]/).pop()}" 已被外部修改。\n\n是否重新加载？（本地更改将丢失）`
+        )
+        if (shouldReload) {
+          reloadFileFromDisk(event.path, newContent)
+        }
+      } else {
+        // 文件无更改，直接刷新
+        reloadFileFromDisk(event.path, newContent)
+      }
+    })
+
+    return unsubscribe
   }, [])
 
   // Resize Logic - 使用共享常量

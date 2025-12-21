@@ -49,20 +49,11 @@ export interface EditorConfig {
     maxResultLength: number // 结果显示最大长度
   }
 
-  // AI 相关
+  // AI 代码补全相关（Agent/上下文配置已迁移到 agentConfig）
   ai: {
-    completionEnabled: boolean // 是否启用 AI 代码补全
-    maxToolLoops: number // 最大工具调用循环次数
-    completionMaxTokens: number // 补全最大 token 数
+    completionEnabled: boolean   // 是否启用 AI 代码补全
+    completionMaxTokens: number  // 补全最大 token 数
     completionTemperature: number // 补全温度
-    // 上下文限制
-    maxContextChars: number // 上下文最大字符数
-    maxHistoryMessages: number // 最大历史消息数
-    maxToolResultChars: number // 工具结果最大字符数（超出截断）
-    maxContextFiles: number // 最大上下文文件数
-    maxSemanticResults: number // 语义搜索最大结果数
-    maxTerminalChars: number // 终端输出最大字符数
-    maxSingleFileChars: number // 单文件最大字符数
   }
 
   // 忽略的目录
@@ -104,20 +95,11 @@ export const defaultEditorConfig: EditorConfig = {
     maxResultLength: 2000,
   },
 
-  // AI 相关
+  // AI 代码补全相关（Agent/上下文配置已迁移到 agentConfig）
   ai: {
     completionEnabled: true,
-    maxToolLoops: 15,
     completionMaxTokens: 256,
     completionTemperature: 0.1,
-    // 上下文限制
-    maxContextChars: 30000, // 30KB
-    maxHistoryMessages: 10, // 最近 10 条消息
-    maxToolResultChars: 30000, // 工具结果最大 30000 字符，超出截断
-    maxContextFiles: 6, // 最多 6 个文件
-    maxSemanticResults: 5, // 语义搜索最多 5 条
-    maxTerminalChars: 3000, // 终端输出最多 3000 字符
-    maxSingleFileChars: 6000, // 单文件最多 6000 字符
   },
 
   // 忽略的目录（使用共享常量）

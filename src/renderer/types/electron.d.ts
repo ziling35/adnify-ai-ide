@@ -267,6 +267,7 @@ export interface ElectronAPI {
   lspDidOpen: (params: { uri: string; languageId: string; version: number; text: string; workspacePath?: string | null }) => Promise<void>
   lspDidChange: (params: { uri: string; version: number; text: string; workspacePath?: string | null }) => Promise<void>
   lspDidClose: (params: { uri: string; workspacePath?: string | null }) => Promise<void>
+  lspDidSave: (params: { uri: string; text?: string; workspacePath?: string | null }) => Promise<void>
   lspDefinition: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspLocation[] | null>
   lspTypeDefinition: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspLocation[] | null>
   lspImplementation: (params: { uri: string; line: number; character: number; workspacePath?: string | null }) => Promise<LspLocation[] | null>

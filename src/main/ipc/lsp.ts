@@ -20,6 +20,8 @@ const EXT_TO_LANGUAGE: Record<string, LanguageId> = {
   less: 'less',
   json: 'json',
   jsonc: 'jsonc',
+  py: 'python',  // Python 支持
+  pyw: 'python',
 }
 
 function getLanguageId(filePath: string): LanguageId | null {
@@ -31,8 +33,8 @@ async function getServerForUri(uri: string, workspacePath: string): Promise<stri
   let filePath = uri
   if (uri.startsWith('file:///')) filePath = uri.slice(8)
   else if (uri.startsWith('file://')) filePath = uri.slice(7)
-  
-  try { filePath = decodeURIComponent(filePath) } catch {}
+
+  try { filePath = decodeURIComponent(filePath) } catch { }
 
   const languageId = getLanguageId(filePath)
   if (!languageId) return null
@@ -89,6 +91,17 @@ export function registerLspHandlers(): void {
 
     lspManager.sendNotification(serverName, 'textDocument/didClose', {
       textDocument: { uri: params.uri },
+    })
+  })
+
+  // 文档保存通知
+  ipcMain.handle('lsp:didSave', async (_, params: { uri: string; text?: string; workspacePath?: string }) => {
+    const serverName = await getServerForUri(params.uri, params.workspacePath || '')
+    if (!serverName) return
+
+    lspManager.sendNotification(serverName, 'textDocument/didSave', {
+      textDocument: { uri: params.uri },
+      text: params.text, // 可选，取决于 capability
     })
   })
 

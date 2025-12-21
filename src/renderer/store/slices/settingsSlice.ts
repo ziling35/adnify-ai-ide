@@ -44,6 +44,11 @@ export interface AgentConfig {
   maxFileContentChars: number   // 单个文件内容最大字符数
   maxTotalContextChars: number  // 总上下文最大字符数
   enableAutoFix: boolean        // 是否启用自动检查和修复
+  // 上下文限制（从 editorConfig.ai 迁移）
+  maxContextFiles: number       // 最大上下文文件数
+  maxSemanticResults: number    // 语义搜索最大结果数
+  maxTerminalChars: number      // 终端输出最大字符数
+  maxSingleFileChars: number    // 单文件最大字符数
 }
 
 export interface SettingsSlice {
@@ -115,6 +120,11 @@ const defaultAgentConfig: AgentConfig = {
   maxFileContentChars: 15000,
   maxTotalContextChars: 50000,
   enableAutoFix: true,
+  // 上下文限制（从 editorConfig.ai 迁移）
+  maxContextFiles: 6,
+  maxSemanticResults: 5,
+  maxTerminalChars: 3000,
+  maxSingleFileChars: 6000,
 }
 
 export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSlice> = (set, get) => ({
@@ -202,13 +212,16 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
 
   loadSettings: async (isEmptyWindow = false) => {
     try {
+      // 从统一的 key 加载所有设置
       const settings = await window.electronAPI.getSetting('app-settings') as any
+
       if (settings) {
         set({
           llmConfig: settings.llmConfig || defaultLLMConfig,
           language: settings.language || 'en',
           autoApprove: settings.autoApprove || defaultAutoApprove,
-          onboardingCompleted: settings.onboardingCompleted ?? true,
+          agentConfig: settings.agentConfig ? { ...defaultAgentConfig, ...settings.agentConfig } : defaultAgentConfig,
+          onboardingCompleted: settings.onboardingCompleted ?? !!settings.llmConfig?.apiKey,
           hasExistingConfig: !!settings.llmConfig?.apiKey,
           editorConfig: require('../../config/editorConfig').getEditorConfig(),
         })
@@ -219,7 +232,6 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
       if (!isEmptyWindow) {
         const workspace = await window.electronAPI.restoreWorkspace()
         if (workspace) {
-          // 这里需要访问 FileSlice 的方法，但 Slices 模式下可以通过 get() 访问
           ; (get() as any).setWorkspace(workspace)
         }
       }

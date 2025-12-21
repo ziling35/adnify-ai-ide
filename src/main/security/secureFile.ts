@@ -229,12 +229,26 @@ export function registerSecureFileHandlers(
     const session = store.get('lastWorkspaceSession') as { configPath: string | null; roots: string[] } | null
 
     if (session) {
+      // 自动启动文件监听
+      setupFileWatcher((data) => {
+        const win = getMainWindowFn()
+        if (win) {
+          win.webContents.send('file:changed', data)
+        }
+      })
       return session
     }
 
     // Fallback to legacy
     const legacyPath = store.get('lastWorkspacePath') as string | null
     if (legacyPath) {
+      // 自动启动文件监听
+      setupFileWatcher((data) => {
+        const win = getMainWindowFn()
+        if (win) {
+          win.webContents.send('file:changed', data)
+        }
+      })
       return { configPath: null, roots: [legacyPath] }
     }
 

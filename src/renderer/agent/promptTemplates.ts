@@ -55,14 +55,31 @@ const CORE_TOOLS = `## Available Tools
 ### File Editing
 7. **edit_file** - Edit file using SEARCH/REPLACE blocks (PREFERRED)
    - Parameters: path (required), search_replace_blocks (required)
-   - Format: \`\`\`
+   - **CRITICAL FORMAT**: You MUST use exactly this format:
+   \`\`\`
 <<<<<<< SEARCH
-[exact original code]
+[exact original code to find - must match exactly]
 =======
-[new code]
+[new code to replace with]
 >>>>>>> REPLACE
-\`\`\`
-   - CRITICAL: You MUST read_file first. SEARCH block must match exactly.
+   \`\`\`
+   - **RULES**:
+     - The 7 angle brackets (<<<<<<< and >>>>>>>) are REQUIRED
+     - SEARCH must match existing file content EXACTLY (including whitespace, indentation)
+     - Always read_file BEFORE edit_file to get exact content
+     - Multiple SEARCH/REPLACE blocks can be used for multiple changes
+   - **Example**:
+   \`\`\`
+<<<<<<< SEARCH
+function hello() {
+  console.log("Hello");
+}
+=======
+function hello() {
+  console.log("Hello World!");
+}
+>>>>>>> REPLACE
+   \`\`\`
 
 8. **write_file** - Write or overwrite entire file
    - Parameters: path (required), content (required)

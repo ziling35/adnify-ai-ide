@@ -13,6 +13,7 @@ import { BrowserWindow, app } from 'electron'
 export type LanguageId =
   | 'typescript' | 'typescriptreact' | 'javascript' | 'javascriptreact'
   | 'html' | 'css' | 'scss' | 'less' | 'json' | 'jsonc'
+  | 'python'  // 添加 Python 支持
 
 interface LspServerConfig {
   name: string
@@ -29,6 +30,9 @@ interface LspServerInstance {
   contentLength: number
   initialized: boolean
   workspacePath: string
+  // 自动重启相关
+  crashCount: number
+  lastCrashTime: number
 }
 
 // ============ 辅助函数 ============
@@ -75,6 +79,25 @@ function getJsonServerCommand(): { command: string; args: string[] } | null {
   return null
 }
 
+// Python LSP (pylsp)
+function getPythonServerCommand(): { command: string; args: string[] } | null {
+  // pylsp 通常通过 pip install python-lsp-server 安装
+  // 尝试多个可能的路径
+  const isWindows = process.platform === 'win32'
+  const pylspNames = isWindows ? ['pylsp.exe', 'pylsp'] : ['pylsp']
+
+  // 检查 PATH 中是否存在 pylsp
+  for (const name of pylspNames) {
+    try {
+      // 尝试运行 pylsp --version 检查是否可用
+      return { command: name, args: [] }
+    } catch {
+      continue
+    }
+  }
+  return null
+}
+
 // ============ 服务器配置 ============
 
 const LSP_SERVERS: LspServerConfig[] = [
@@ -98,6 +121,11 @@ const LSP_SERVERS: LspServerConfig[] = [
     languages: ['json', 'jsonc'],
     getCommand: getJsonServerCommand,
   },
+  {
+    name: 'python',
+    languages: ['python'],
+    getCommand: getPythonServerCommand,
+  },
 ]
 
 // ============ LSP 管理器 ============
@@ -105,9 +133,13 @@ const LSP_SERVERS: LspServerConfig[] = [
 class LspManager {
   private servers: Map<string, LspServerInstance> = new Map() // key: serverName:workspacePath
   private languageToServer: Map<LanguageId, string> = new Map()
-  // private documentVersions: Map<string, number> = new Map()
+  private documentVersions: Map<string, number> = new Map() // 启用文档版本管理
   private diagnosticsCache: Map<string, any[]> = new Map()
   private startingServers: Set<string> = new Set()
+
+  // 自动重启配置
+  private static readonly MAX_CRASH_COUNT = 3
+  private static readonly CRASH_COOLDOWN_MS = 5000
 
   constructor() {
     for (const config of LSP_SERVERS) {
@@ -172,6 +204,8 @@ class LspManager {
       contentLength: -1,
       initialized: false,
       workspacePath,
+      crashCount: 0,
+      lastCrashTime: 0,
     }
 
     this.servers.set(key, instance)
@@ -190,10 +224,28 @@ class LspManager {
 
     proc.on('close', (code) => {
       console.log(`[LSP ${key}] Closed with code: ${code}`)
-      if (code !== 0 && code !== null) {
-        console.warn(`[LSP ${key}] Server crashed. Check if project has package.json/tsconfig.json`)
-      }
+      const inst = this.servers.get(key)
       this.servers.delete(key)
+
+      // 自动重启逻辑
+      if (code !== 0 && code !== null && inst) {
+        const now = Date.now()
+        // 检查是否在冷却时间内
+        if (now - inst.lastCrashTime > LspManager.CRASH_COOLDOWN_MS) {
+          inst.crashCount = 0 // 重置崩溃计数
+        }
+        inst.crashCount++
+        inst.lastCrashTime = now
+
+        if (inst.crashCount <= LspManager.MAX_CRASH_COUNT) {
+          console.warn(`[LSP ${key}] Server crashed, attempting restart (${inst.crashCount}/${LspManager.MAX_CRASH_COUNT})...`)
+          setTimeout(() => {
+            this.startServer(inst.config.name, inst.workspacePath).catch(console.error)
+          }, 1000)
+        } else {
+          console.error(`[LSP ${key}] Server crashed too many times, giving up`)
+        }
+      }
     })
 
     proc.stdin.on('error', (err) => console.warn(`[LSP ${key}] stdin error:`, err.message))
@@ -376,6 +428,22 @@ class LspManager {
 
   getDiagnostics(uri: string): any[] {
     return this.diagnosticsCache.get(uri) || []
+  }
+
+  // 文档版本管理
+  getDocumentVersion(uri: string): number {
+    return this.documentVersions.get(uri) || 0
+  }
+
+  incrementDocumentVersion(uri: string): number {
+    const current = this.documentVersions.get(uri) || 0
+    const next = current + 1
+    this.documentVersions.set(uri, next)
+    return next
+  }
+
+  resetDocumentVersion(uri: string): void {
+    this.documentVersions.delete(uri)
   }
 }
 

@@ -61,6 +61,8 @@ export interface FileSlice {
   setActiveFile: (path: string | null) => void
   updateFileContent: (path: string, content: string) => void
   markFileSaved: (path: string) => void
+  /** 从磁盘重新加载文件内容（不设置 dirty） */
+  reloadFileFromDisk: (path: string, content: string) => void
   // 文件树刷新触发器
   fileTreeRefreshKey: number
   triggerFileTreeRefresh: () => void
@@ -190,5 +192,12 @@ export const createFileSlice: StateCreator<FileSlice, [], [], FileSlice> = (set)
   markFileSaved: (path) =>
     set((state) => ({
       openFiles: state.openFiles.map((f) => (f.path === path ? { ...f, isDirty: false } : f)),
+    })),
+
+  reloadFileFromDisk: (path, content) =>
+    set((state) => ({
+      openFiles: state.openFiles.map((f) =>
+        f.path === path ? { ...f, content, originalContent: content, isDirty: false } : f
+      ),
     })),
 })

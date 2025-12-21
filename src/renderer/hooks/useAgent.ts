@@ -26,10 +26,10 @@ export function useAgent() {
   // 本地状态：aiInstructions（从 electron settings 获取）
   const [aiInstructions, setAiInstructions] = useState<string>('')
 
-  // 加载 aiInstructions
+  // 加载 aiInstructions（从统一的 app-settings 读取）
   useEffect(() => {
-    window.electronAPI.getSetting('aiInstructions').then(s => {
-      if (s) setAiInstructions(s as string)
+    window.electronAPI.getSetting('app-settings').then((settings: any) => {
+      if (settings?.aiInstructions) setAiInstructions(settings.aiInstructions)
     })
   }, [])
 
@@ -116,11 +116,12 @@ export function useAgent() {
   // 检测上下文是否过长（在用户发送消息前调用）
   const checkContextLength = useCallback((): { needsCompact: boolean; messageCount: number; charCount: number } => {
     const messages = useAgentStore.getState().getMessages()
-    const filteredMessages = messages.filter(m => m.role !== 'checkpoint')
+    // 只统计 user + assistant 消息（不含 tool），更符合用户直觉
+    const userAssistantMessages = messages.filter(m => m.role === 'user' || m.role === 'assistant')
 
     // 计算字符数
     let charCount = 0
-    for (const msg of filteredMessages) {
+    for (const msg of userAssistantMessages) {
       if ('content' in msg) {
         const content = msg.content
         if (typeof content === 'string') {
@@ -133,13 +134,14 @@ export function useAgent() {
       }
     }
 
-    // 安全阈值：在达到真正阈值的 80% 时提醒
-    const WARN_MESSAGE_THRESHOLD = 24  // 30 * 0.8
-    const WARN_CHAR_THRESHOLD = 32000  // 40000 * 0.8
+    // 从用户配置读取阈值，警告阈值设为配置值的 80%
+    const { agentConfig } = useStore.getState()
+    const WARN_MESSAGE_THRESHOLD = Math.floor((agentConfig.maxHistoryMessages ?? 50) * 0.8)
+    const WARN_CHAR_THRESHOLD = Math.floor((agentConfig.maxTotalContextChars ?? 50000) * 0.8)
 
     return {
-      needsCompact: filteredMessages.length > WARN_MESSAGE_THRESHOLD || charCount > WARN_CHAR_THRESHOLD,
-      messageCount: filteredMessages.length,
+      needsCompact: userAssistantMessages.length > WARN_MESSAGE_THRESHOLD || charCount > WARN_CHAR_THRESHOLD,
+      messageCount: userAssistantMessages.length,
       charCount,
     }
   }, [])

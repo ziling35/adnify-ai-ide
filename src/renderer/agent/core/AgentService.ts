@@ -155,14 +155,20 @@ class AgentServiceClass {
       }
     }
 
+    // 获取最新配置（动态获取以反映用户设置的更改）
+    const currentConfig = getConfig()
+
+    // 只统计 user + assistant 消息（不含 tool），更符合用户直觉
+    const userAssistantMessages = filteredMessages.filter(m => m.role === 'user' || m.role === 'assistant')
+
     // 更新全局 Store 中的统计信息
     state.setContextStats({
       totalChars,
-      maxChars: CONFIG.maxTotalContextChars,
+      maxChars: currentConfig.maxTotalContextChars,
       fileCount,
       maxFiles: 10,
-      messageCount: filteredMessages.length,
-      maxMessages: CONFIG.maxHistoryMessages,
+      messageCount: userAssistantMessages.length,
+      maxMessages: currentConfig.maxHistoryMessages,
       semanticResultCount,
       terminalChars: 0
     })
