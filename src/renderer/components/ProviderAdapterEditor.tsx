@@ -4,7 +4,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react'
-import { Check, ChevronDown, Code2, FileJson, Settings2, Sparkles, Copy } from 'lucide-react'
+import { Check, Code2, FileJson, Settings2, Sparkles, Copy } from 'lucide-react'
 import { Select, Switch } from './ui'
 
 // 适配器配置接口
@@ -127,9 +127,27 @@ const BUILTIN_ADAPTERS: Record<string, { name: string; description: string; conf
     }
 }
 
+// Provider 到默认适配器的映射
+const PROVIDER_ADAPTER_MAP: Record<string, string> = {
+    openai: 'openai',
+    anthropic: 'anthropic',
+    deepseek: 'deepseek',
+    groq: 'openai',      // Groq 兼容 OpenAI
+    mistral: 'openai',   // Mistral 兼容 OpenAI
+    ollama: 'mixed',     // Ollama 可能是各种模型
+    gemini: 'openai',    // Gemini 使用类似格式
+    custom: 'openai',    // 自定义默认 OpenAI
+}
+
+// 获取 Provider 的默认适配器
+export function getDefaultAdapterForProvider(provider: string): string {
+    return PROVIDER_ADAPTER_MAP[provider] || 'openai'
+}
+
 interface ProviderAdapterEditorProps {
     adapterId?: string
     adapterConfig?: AdapterConfig
+    providerId?: string  // 当前选中的 Provider
     onAdapterChange: (adapterId: string, config?: AdapterConfig) => void
     language: 'en' | 'zh'
 }

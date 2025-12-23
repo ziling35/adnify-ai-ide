@@ -5,6 +5,19 @@
 
 export type ProviderType = 'openai' | 'anthropic' | 'gemini' | 'deepseek' | 'groq' | 'mistral' | 'ollama' | 'custom'
 
+// 适配器配置
+export interface AdapterConfig {
+  responseFormat: 'json' | 'xml' | 'mixed'
+  toolCallPath: string
+  toolNamePath: string
+  toolArgsPath: string
+  argsIsObject: boolean
+  autoGenerateId: boolean
+  xmlToolCallTag?: string
+  xmlNameSource?: string
+  xmlArgsTag?: string
+}
+
 export interface LLMConfig {
   provider: ProviderType
   model: string
@@ -16,8 +29,9 @@ export interface LLMConfig {
   // Thinking 模式配置
   thinkingEnabled?: boolean
   thinkingBudget?: number
-  // 自定义适配器 ID (用于工具调用格式配置)
+  // 适配器配置
   adapterId?: string
+  adapterConfig?: AdapterConfig
 }
 
 export interface TextContent {

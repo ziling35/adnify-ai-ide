@@ -492,7 +492,13 @@ function ProviderSettings({
         {/* Provider Adapter Configuration */}
         <ProviderAdapterEditor
           adapterId={localConfig.adapterId}
-          onAdapterChange={(id, config) => setLocalConfig({ ...localConfig, adapterId: id })}
+          adapterConfig={localConfig.adapterConfig}
+          providerId={localConfig.provider}
+          onAdapterChange={(id, config) => setLocalConfig({
+            ...localConfig,
+            adapterId: id,
+            adapterConfig: config
+          })}
           language={language}
         />
       </section>

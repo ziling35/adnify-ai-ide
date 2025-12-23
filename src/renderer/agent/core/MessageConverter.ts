@@ -216,11 +216,7 @@ export function validateOpenAIMessages(messages: OpenAIMessage[]): { valid: bool
     return { valid: false, error: 'No messages' }
   }
 
-  // 检查最后一条消息
-  const lastMsg = messages[messages.length - 1]
-  if (lastMsg.role === 'assistant' && !lastMsg.tool_calls) {
-    return { valid: false, error: 'Last message cannot be assistant without tool_calls' }
-  }
+  // 注意：最后一条消息可以是普通 assistant 回复（无 tool_calls），这是有效的
 
   // 检查 tool 消息是否有对应的 tool_call
   const toolCallIds = new Set<string>()
