@@ -6,6 +6,7 @@
 import Anthropic from '@anthropic-ai/sdk'
 import { BaseProvider } from './base'
 import { ChatParams, ToolDefinition, ToolCall, MessageContent } from '../types'
+import { adapterService } from '../adapterService'
 
 export class AnthropicProvider extends BaseProvider {
   private client: Anthropic
@@ -50,8 +51,15 @@ export class AnthropicProvider extends BaseProvider {
     })
   }
 
-  private convertTools(tools?: ToolDefinition[]): Anthropic.Tool[] | undefined {
+  private convertTools(tools?: ToolDefinition[], adapterId?: string): Anthropic.Tool[] | undefined {
     if (!tools?.length) return undefined
+
+    // 如果指定了自定义 adapterId 且不是默认 anthropic，使用 adapterService
+    if (adapterId && adapterId !== 'anthropic') {
+      return adapterService.convertTools(tools, adapterId) as Anthropic.Tool[]
+    }
+
+    // 默认使用 Anthropic 原生格式
     return tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -68,6 +76,7 @@ export class AnthropicProvider extends BaseProvider {
       signal,
       thinkingEnabled,
       thinkingBudget,
+      adapterId,
       onStream,
       onToolCall,
       onComplete,
@@ -120,7 +129,7 @@ export class AnthropicProvider extends BaseProvider {
         max_tokens: 8192,
         system: systemPrompt,
         messages: anthropicMessages,
-        tools: this.convertTools(tools),
+        tools: this.convertTools(tools, adapterId),
       }
 
       // Extended Thinking 支持 (Claude 3.5 Sonnet, Claude 4 等)

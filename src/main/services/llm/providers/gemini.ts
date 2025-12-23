@@ -6,6 +6,7 @@
 import { GoogleGenerativeAI, SchemaType, Content } from '@google/generative-ai'
 import { BaseProvider } from './base'
 import { ChatParams, ToolDefinition, ToolCall } from '../types'
+import { adapterService } from '../adapterService'
 
 export class GeminiProvider extends BaseProvider {
   private client: GoogleGenerativeAI
@@ -20,9 +21,16 @@ export class GeminiProvider extends BaseProvider {
     this.client = new GoogleGenerativeAI(apiKey)
   }
 
-  private convertTools(tools?: ToolDefinition[]) {
+  private convertTools(tools?: ToolDefinition[], adapterId?: string) {
     if (!tools?.length) return undefined
 
+    // 如果指定了自定义 adapterId 且不是默认 gemini，使用 adapterService
+    if (adapterId && adapterId !== 'gemini') {
+      const converted = adapterService.convertTools(tools, adapterId)
+      return [{ functionDeclarations: converted }]
+    }
+
+    // 默认使用 Gemini 原生格式
     const functionDeclarations = tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -53,6 +61,7 @@ export class GeminiProvider extends BaseProvider {
       systemPrompt,
       thinkingEnabled,
       thinkingBudget,
+      adapterId,
       onStream,
       onToolCall,
       onComplete,
@@ -69,7 +78,7 @@ export class GeminiProvider extends BaseProvider {
       const modelConfig: Record<string, unknown> = {
         model,
         systemInstruction: systemPrompt,
-        tools: this.convertTools(tools) as Parameters<
+        tools: this.convertTools(tools, adapterId) as Parameters<
           typeof this.client.getGenerativeModel
         >[0]['tools'],
       }
