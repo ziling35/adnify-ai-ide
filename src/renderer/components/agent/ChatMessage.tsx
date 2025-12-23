@@ -1,10 +1,11 @@
 /**
  * 聊天消息组件
  * Cursor 风格：完全扁平化，无气泡，沉浸式体验
+ * 新设计：全宽布局，头像在顶部 Header
  */
 
 import React, { useState, useCallback } from 'react'
-import { User, Copy, Check, RefreshCw, Edit2, RotateCcw, FileText } from 'lucide-react'
+import { User, Copy, Check, RefreshCw, Edit2, RotateCcw, FileText, Sparkles } from 'lucide-react'
 import ReactMarkdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { vscDarkPlus } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -82,7 +83,7 @@ CodeBlock.displayName = 'CodeBlock'
 
 // Markdown 渲染组件 - 优化排版
 const MarkdownContent = React.memo(({ content, fontSize }: { content: string; fontSize: number }) => (
-  <div style={{ fontSize: `${fontSize}px` }} className="text-text-primary/90 leading-7">
+  <div style={{ fontSize: `${fontSize}px` }} className="text-text-primary/90 leading-8 tracking-wide">
     <ReactMarkdown
       className="prose prose-invert max-w-none"
       components={{
@@ -228,121 +229,145 @@ const ChatMessage = React.memo(({
   }
 
   return (
-    <div className={`w-full px-4 py-4 group transition-colors duration-200 ${isUser ? 'bg-transparent' : 'bg-transparent'}`}>
-      <div className="flex gap-4 max-w-3xl mx-auto">
-        {/* Avatar */}
-        <div className="flex-shrink-0 pt-0.5">
-          {isUser ? (
-            <div className="w-7 h-7 rounded-full bg-surface-active/50 border border-white/10 flex items-center justify-center shadow-sm">
-              <User className="w-3.5 h-3.5 text-text-secondary" />
-            </div>
-          ) : (
-            <div className="w-8 h-8 rounded-full overflow-hidden border border-accent/20 shadow-sm shadow-accent/10">
-              <img src={aiAvatar} alt="AI" className="w-full h-full object-cover" />
-            </div>
-          )}
-        </div>
+    <div className={`w-full py-6 group transition-colors duration-200 border-b border-white/5 last:border-0`}>
+      <div className="max-w-3xl mx-auto px-4">
+        {/* Header Row: Avatar + Name + Time/Actions */}
+        <div className="flex items-center gap-3 mb-3 select-none">
+          <div className="flex-shrink-0">
+            {isUser ? (
+              <div className="w-6 h-6 rounded-full bg-surface-active/50 border border-white/10 flex items-center justify-center shadow-sm">
+                <User className="w-3.5 h-3.5 text-text-secondary" />
+              </div>
+            ) : (
+              <div className="w-6 h-6 rounded-full overflow-hidden border border-accent/20 shadow-sm shadow-accent/10 bg-black">
+                <img src={aiAvatar} alt="AI" className="w-full h-full object-cover opacity-90" />
+              </div>
+            )}
+          </div>
 
-        {/* Content */}
-        <div className="flex-1 min-w-0 overflow-hidden">
+          <div className="flex-1 min-w-0 flex items-center gap-2">
+            <span className="text-sm font-semibold text-text-primary">
+              {isUser ? 'You' : 'Adnify'}
+            </span>
+            {!isUser && (
+              <span className="px-1.5 py-0.5 rounded text-[10px] font-medium bg-accent/10 text-accent border border-accent/20 flex items-center gap-1">
+                <Sparkles className="w-2.5 h-2.5" />
+                AI
+              </span>
+            )}
+          </div>
+
+          {/* Actions (Visible on Hover) */}
+          <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            {isUser && onEdit && (
+              <button onClick={handleStartEdit} className="p-1.5 text-text-muted hover:text-text-primary rounded hover:bg-white/5 transition-colors" title="Edit">
+                <Edit2 className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {!isUser && onRegenerate && (
+              <button onClick={() => onRegenerate(message.id)} className="p-1.5 text-text-muted hover:text-text-primary rounded hover:bg-white/5 transition-colors" title="Regenerate">
+                <RefreshCw className="w-3.5 h-3.5" />
+              </button>
+            )}
+            {isUser && hasCheckpoint && onRestore && (
+              <button onClick={() => onRestore(message.id)} className="p-1.5 text-text-muted hover:text-amber-400 rounded hover:bg-white/5 transition-colors" title="Restore">
+                <RotateCcw className="w-3.5 h-3.5" />
+              </button>
+            )}
+            <button onClick={handleCopy} className="p-1.5 text-text-muted hover:text-text-primary rounded hover:bg-white/5 transition-colors" title="Copy">
+              {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
+            </button>
+          </div>
+        </div >
+
+        {/* Content Row: Full Width */}
+        < div className="pl-0" >
           {/* Images */}
-          {images.length > 0 && (
-            <div className="flex flex-wrap gap-3 mb-2">
-              {images.map((img, i) => (
-                <div key={i} className="rounded-lg overflow-hidden border border-white/10 shadow-sm max-w-[200px]">
-                  <img
-                    src={`data:${img.source.media_type};base64,${img.source.data}`}
-                    alt="User upload"
-                    className="max-w-full h-auto"
-                  />
-                </div>
-              ))}
-            </div>
-          )}
+          {
+            images.length > 0 && (
+              <div className="flex flex-wrap gap-3 mb-3">
+                {images.map((img, i) => (
+                  <div key={i} className="rounded-lg overflow-hidden border border-white/10 shadow-sm max-w-[200px]">
+                    <img
+                      src={`data:${img.source.media_type};base64,${img.source.data}`}
+                      alt="User upload"
+                      className="max-w-full h-auto"
+                    />
+                  </div>
+                ))}
+              </div>
+            )
+          }
 
           {/* Editing */}
-          {isEditing ? (
-            <div className="space-y-3 bg-surface/40 p-3 rounded-xl border border-white/10 backdrop-blur-sm">
-              <textarea
-                value={editContent}
-                onChange={(e) => setEditContent(e.target.value)}
-                className="w-full bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-sm text-text-primary resize-none focus:outline-none focus:border-accent/50 transition-colors"
-                rows={4}
-                autoFocus
-                style={{ fontSize: `${fontSize}px` }}
-              />
-              <div className="flex items-center gap-2 justify-end">
-                <button
-                  onClick={() => setIsEditing(false)}
-                  className="px-3 py-1.5 text-xs text-text-muted hover:text-text-primary rounded-md transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  onClick={handleSaveEdit}
-                  className="px-3 py-1.5 bg-accent text-white text-xs font-medium rounded-md hover:bg-accent-hover transition-colors shadow-sm shadow-accent/20"
-                >
-                  Save & Resend
-                </button>
+          {
+            isEditing ? (
+              <div className="space-y-3 bg-surface/40 p-3 rounded-xl border border-white/10 backdrop-blur-sm">
+                <textarea
+                  value={editContent}
+                  onChange={(e) => setEditContent(e.target.value)}
+                  className="w-full bg-black/20 border border-white/5 rounded-lg px-3 py-2 text-sm text-text-primary resize-none focus:outline-none focus:border-accent/50 transition-colors"
+                  rows={4}
+                  autoFocus
+                  style={{ fontSize: `${fontSize}px` }}
+                />
+                <div className="flex items-center gap-2 justify-end">
+                  <button
+                    onClick={() => setIsEditing(false)}
+                    className="px-3 py-1.5 text-xs text-text-muted hover:text-text-primary rounded-md transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleSaveEdit}
+                    className="px-3 py-1.5 bg-accent text-white text-xs font-medium rounded-md hover:bg-accent-hover transition-colors shadow-sm shadow-accent/20"
+                  >
+                    Save & Resend
+                  </button>
+                </div>
               </div>
-            </div>
-          ) : (
-            <div className="space-y-1">
-              {/* User message */}
-              {isUser && <MarkdownContent content={textContent} fontSize={fontSize} />}
+            ) : (
+              <div className="space-y-1">
+                {/* User message */}
+                {isUser && <MarkdownContent content={textContent} fontSize={fontSize} />}
 
-              {/* Assistant message */}
-              {isAssistantMessage(message) && message.parts && message.parts.length > 0 && (
-                <>
-                  {(() => {
-                    // Group consecutive tool calls
-                    const groups: Array<
-                      | { type: 'part'; part: AssistantPart; index: number }
-                      | { type: 'tool_group'; toolCalls: import('../../agent/core/types').ToolCall[]; startIndex: number }
-                    > = []
+                {/* Assistant message */}
+                {isAssistantMessage(message) && message.parts && message.parts.length > 0 && (
+                  <>
+                    {(() => {
+                      // Group consecutive tool calls
+                      const groups: Array<
+                        | { type: 'part'; part: AssistantPart; index: number }
+                        | { type: 'tool_group'; toolCalls: import('../../agent/core/types').ToolCall[]; startIndex: number }
+                      > = []
 
-                    let currentToolCalls: import('../../agent/core/types').ToolCall[] = []
-                    let startIndex = -1
+                      let currentToolCalls: import('../../agent/core/types').ToolCall[] = []
+                      let startIndex = -1
 
-                    message.parts.forEach((part, index) => {
-                      if (isToolCallPart(part)) {
-                        if (currentToolCalls.length === 0) startIndex = index
-                        currentToolCalls.push(part.toolCall)
-                      } else {
-                        if (currentToolCalls.length > 0) {
-                          groups.push({ type: 'tool_group', toolCalls: currentToolCalls, startIndex })
-                          currentToolCalls = []
+                      message.parts.forEach((part, index) => {
+                        if (isToolCallPart(part)) {
+                          if (currentToolCalls.length === 0) startIndex = index
+                          currentToolCalls.push(part.toolCall)
+                        } else {
+                          if (currentToolCalls.length > 0) {
+                            groups.push({ type: 'tool_group', toolCalls: currentToolCalls, startIndex })
+                            currentToolCalls = []
+                          }
+                          groups.push({ type: 'part', part, index })
                         }
-                        groups.push({ type: 'part', part, index })
+                      })
+
+                      if (currentToolCalls.length > 0) {
+                        groups.push({ type: 'tool_group', toolCalls: currentToolCalls, startIndex })
                       }
-                    })
 
-                    if (currentToolCalls.length > 0) {
-                      groups.push({ type: 'tool_group', toolCalls: currentToolCalls, startIndex })
-                    }
-
-                    return groups.map((group) => {
-                      if (group.type === 'part') {
-                        return (
-                          <RenderPart
-                            key={`part-${group.index}`}
-                            part={group.part}
-                            index={group.index}
-                            pendingToolId={pendingToolId}
-                            onApproveTool={onApproveTool}
-                            onRejectTool={onRejectTool}
-                            onOpenDiff={onOpenDiff}
-                            fontSize={fontSize}
-                          />
-                        )
-                      } else {
-                        // If only 1 tool call, render individually
-                        if (group.toolCalls.length === 1) {
+                      return groups.map((group) => {
+                        if (group.type === 'part') {
                           return (
                             <RenderPart
-                              key={`part-${group.startIndex}`}
-                              part={message.parts![group.startIndex]}
-                              index={group.startIndex}
+                              key={`part-${group.index}`}
+                              part={group.part}
+                              index={group.index}
                               pendingToolId={pendingToolId}
                               onApproveTool={onApproveTool}
                               onRejectTool={onRejectTool}
@@ -350,139 +375,100 @@ const ChatMessage = React.memo(({
                               fontSize={fontSize}
                             />
                           )
-                        }
-
-                        return (
-                          <ToolCallGroup
-                            key={`group-${group.startIndex}`}
-                            toolCalls={group.toolCalls}
-                            pendingToolId={pendingToolId}
-                            onApproveTool={onApproveTool}
-                            onRejectTool={onRejectTool}
-                            onApproveAll={onApproveAll}
-                            onOpenDiff={onOpenDiff}
-                          />
-                        )
-                      }
-                    })
-                  })()}
-                </>
-              )}
-
-              {/* Legacy compatibility */}
-              {isAssistantMessage(message) && (!message.parts || message.parts.length === 0) && (
-                <>
-                  {textContent && <MarkdownContent content={textContent} fontSize={fontSize} />}
-                  {message.toolCalls && message.toolCalls.length > 0 && (
-                    <div className="mt-3">
-                      {/* 如果有多个工具调用，使用分组显示 */}
-                      {message.toolCalls.length > 1 ? (
-                        <ToolCallGroup
-                          toolCalls={message.toolCalls}
-                          pendingToolId={pendingToolId}
-                          onApproveTool={onApproveTool}
-                          onRejectTool={onRejectTool}
-                          onOpenDiff={onOpenDiff}
-                        />
-                      ) : (
-                        // 单个工具调用直接显示
-                        message.toolCalls.map((tc, index) => {
-                          const isFileOp = WRITE_TOOLS.includes(tc.name)
-                          const isPending = tc.id === pendingToolId
-
-                          if (isFileOp) {
+                        } else {
+                          // If only 1 tool call, render individually
+                          if (group.toolCalls.length === 1) {
                             return (
-                              <FileChangeCard
-                                key={`tool-${tc.id}-${index}`}
-                                toolCall={tc}
-                                isAwaitingApproval={isPending}
-                                onApprove={isPending ? onApproveTool : undefined}
-                                onReject={isPending ? onRejectTool : undefined}
-                                onOpenInEditor={onOpenDiff}
+                              <RenderPart
+                                key={`part-${group.startIndex}`}
+                                part={message.parts![group.startIndex]}
+                                index={group.startIndex}
+                                pendingToolId={pendingToolId}
+                                onApproveTool={onApproveTool}
+                                onRejectTool={onRejectTool}
+                                onOpenDiff={onOpenDiff}
+                                fontSize={fontSize}
                               />
                             )
                           }
 
                           return (
-                            <ToolCallCard
-                              key={`tool-${tc.id}-${index}`}
-                              toolCall={tc}
-                              isAwaitingApproval={isPending}
-                              onApprove={isPending ? onApproveTool : undefined}
-                              onReject={isPending ? onRejectTool : undefined}
+                            <ToolCallGroup
+                              key={`group-${group.startIndex}`}
+                              toolCalls={group.toolCalls}
+                              pendingToolId={pendingToolId}
+                              onApproveTool={onApproveTool}
+                              onRejectTool={onRejectTool}
+                              onApproveAll={onApproveAll}
+                              onOpenDiff={onOpenDiff}
                             />
                           )
-                        })
-                      )}
-                    </div>
-                  )}
-                </>
-              )}
+                        }
+                      })
+                    })()}
+                  </>
+                )}
 
-              {/* Streaming cursor */}
-              {isAssistantMessage(message) && message.isStreaming && (
-                <span className="inline-block w-1.5 h-4 bg-accent ml-1 animate-pulse rounded-full align-middle" />
-              )}
+                {/* Legacy compatibility */}
+                {isAssistantMessage(message) && (!message.parts || message.parts.length === 0) && (
+                  <>
+                    {textContent && <MarkdownContent content={textContent} fontSize={fontSize} />}
+                    {message.toolCalls && message.toolCalls.length > 0 && (
+                      <div className="mt-3">
+                        {/* 如果有多个工具调用，使用分组显示 */}
+                        {message.toolCalls.length > 1 ? (
+                          <ToolCallGroup
+                            toolCalls={message.toolCalls}
+                            pendingToolId={pendingToolId}
+                            onApproveTool={onApproveTool}
+                            onRejectTool={onRejectTool}
+                            onOpenDiff={onOpenDiff}
+                          />
+                        ) : (
+                          // 单个工具调用直接显示
+                          message.toolCalls.map((tc, index) => {
+                            const isFileOp = WRITE_TOOLS.includes(tc.name)
+                            const isPending = tc.id === pendingToolId
 
-              {/* Actions - Subtle and minimal */}
-              {!(isAssistantMessage(message) && message.isStreaming) && (
-                <div className="flex items-center gap-3 mt-2 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-                  {isUser && onEdit && (
-                    <button
-                      onClick={handleStartEdit}
-                      className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-primary transition-colors"
-                    >
-                      <Edit2 className="w-3 h-3" />
-                      Edit
-                    </button>
-                  )}
-                  {!isUser && onRegenerate && (
-                    <button
-                      onClick={() => onRegenerate(message.id)}
-                      className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-primary transition-colors"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      Regenerate
-                    </button>
-                  )}
-                  {isUser && hasCheckpoint && onRestore && (
-                    <button
-                      onClick={() => onRestore(message.id)}
-                      className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-amber-400 transition-colors"
-                      title="Restore to this point"
-                    >
-                      <RotateCcw className="w-3 h-3" />
-                      Restore
-                    </button>
-                  )}
-                  <button
-                    onClick={handleCopy}
-                    className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-text-primary transition-colors"
-                  >
-                    {copied ? <Check className="w-3 h-3 text-green-400" /> : <Copy className="w-3 h-3" />}
-                    Copy
-                  </button>
-                  {!isUser && (
-                    <button
-                      onClick={() => {
-                        // 复制原始 Markdown 内容
-                        navigator.clipboard.writeText(textContent)
-                        // 简单反馈已通过上面的 Copy 按钮处理
-                      }}
-                      className="flex items-center gap-1.5 text-[11px] text-text-muted hover:text-accent transition-colors"
-                      title="Copy as Markdown"
-                    >
-                      <FileText className="w-3 h-3" />
-                      Markdown
-                    </button>
-                  )}
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-      </div>
-    </div>
+                            if (isFileOp) {
+                              return (
+                                <FileChangeCard
+                                  key={`tool-${tc.id}-${index}`}
+                                  toolCall={tc}
+                                  isAwaitingApproval={isPending}
+                                  onApprove={isPending ? onApproveTool : undefined}
+                                  onReject={isPending ? onRejectTool : undefined}
+                                  onOpenInEditor={onOpenDiff}
+                                />
+                              )
+                            }
+
+                            return (
+                              <ToolCallCard
+                                key={`tool-${tc.id}-${index}`}
+                                toolCall={tc}
+                                isAwaitingApproval={isPending}
+                                onApprove={isPending ? onApproveTool : undefined}
+                                onReject={isPending ? onRejectTool : undefined}
+                              />
+                            )
+                          })
+                        )}
+                      </div>
+                    )}
+                  </>
+                )}
+
+                {/* Streaming cursor */}
+                {isAssistantMessage(message) && message.isStreaming && (
+                  <span className="inline-block w-2 h-5 bg-accent ml-1 animate-pulse align-middle rounded-sm shadow-[0_0_10px_rgba(var(--color-accent),0.5)]" />
+                )}
+              </div>
+            )
+          }
+        </div >
+      </div >
+    </div >
   )
 })
 

@@ -1,5 +1,6 @@
 /**
  * 聊天输入组件
+ * 新设计：悬浮式 Pill Bar 设计，更加现代和简洁
  */
 import { useRef, useCallback, useMemo, useState } from 'react'
 import {
@@ -12,12 +13,14 @@ import {
   Database,
   Paperclip,
   ArrowUp,
-  ClipboardList
+  ClipboardList,
+  Plus
 } from 'lucide-react'
 import { useStore, ChatMode } from '../../store'
 import { t } from '../../i18n'
 import { Button } from '../ui'
 import { useModeStore } from '@/renderer/modes'
+import { ContextItem, FileContext } from '@/renderer/agent/core/types'
 
 export interface PendingImage {
   id: string
@@ -43,6 +46,10 @@ interface ChatInputProps {
   onPaste: (e: React.ClipboardEvent) => void
   textareaRef: React.RefObject<HTMLTextAreaElement>
   inputContainerRef: React.RefObject<HTMLDivElement>
+  contextItems: ContextItem[]
+  onRemoveContextItem: (item: ContextItem) => void
+  activeFilePath?: string | null
+  onAddFile?: (filePath: string) => void
 }
 
 export default function ChatInput({
@@ -61,6 +68,10 @@ export default function ChatInput({
   onPaste,
   textareaRef,
   inputContainerRef,
+  contextItems,
+  onRemoveContextItem,
+  activeFilePath,
+  onAddFile,
 }: ChatInputProps) {
   const { language, editorConfig } = useStore()
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -110,21 +121,21 @@ export default function ChatInput({
   )
 
   return (
-    <div ref={inputContainerRef} className="p-3 pt-0 z-20 bg-transparent">
+    <div ref={inputContainerRef} className="p-4 z-20 bg-transparent">
       <div
         className={`
-            relative group rounded-xl border transition-all duration-300 ease-out
+            relative group rounded-[24px] border transition-all duration-300 ease-out
             ${isStreaming
             ? 'border-accent/30 bg-accent/5 shadow-[0_0_20px_rgba(var(--color-accent),0.1)]'
             : isFocused
-              ? 'border-accent/40 bg-background shadow-2xl shadow-accent/5'
+              ? 'border-accent/40 bg-background shadow-2xl shadow-accent/5 ring-1 ring-accent/10'
               : 'border-white/10 bg-background/80 backdrop-blur-xl hover:border-white/20 shadow-xl'
           }
         `}
       >
         {/* Image Previews */}
         {images.length > 0 && (
-          <div className="flex gap-2 p-2 pb-0 overflow-x-auto custom-scrollbar">
+          <div className="flex gap-2 px-4 pt-3 pb-0 overflow-x-auto custom-scrollbar">
             {images.map((img) => (
               <div
                 key={img.id}
@@ -143,45 +154,75 @@ export default function ChatInput({
         )}
 
         {/* Context Chips */}
-        {(fileRefs.length > 0 || hasCodebaseRef || hasSymbolsRef || hasGitRef || hasTerminalRef) && (
-          <div className="flex flex-wrap gap-1.5 px-2.5 pt-2 pb-0.5">
+        {(contextItems.length > 0 || fileRefs.length > 0 || hasCodebaseRef || hasSymbolsRef || hasGitRef || hasTerminalRef || (activeFilePath && onAddFile)) && (
+          <div className="flex flex-wrap gap-1.5 px-4 pt-3 pb-0.5">
+            {/* Active File Suggestion */}
+            {activeFilePath && onAddFile && !contextItems.some(item => item.type === 'File' && (item as FileContext).uri === activeFilePath) && (
+              <button
+                onClick={() => onAddFile(activeFilePath)}
+                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-accent/10 text-accent text-[10px] font-medium rounded-full border border-accent/20 animate-fade-in select-none hover:bg-accent/20 transition-colors"
+              >
+                <Plus className="w-2.5 h-2.5" />
+                <span>{activeFilePath.split(/[\\/]/).pop()}</span>
+              </button>
+            )}
+            {/* Context Items (Source of Truth) */}
+            {contextItems.map((item, i) => {
+              if (item.type === 'File') {
+                const uri = (item as FileContext).uri
+                const name = uri.split(/[\\/]/).pop() || uri
+                return (
+                  <span
+                    key={`ctx-${i}`}
+                    className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white/5 text-text-secondary text-[10px] font-medium rounded-full border border-white/10 animate-fade-in select-none group/chip"
+                  >
+                    <FileText className="w-2.5 h-2.5 opacity-70" />
+                    <span title={uri}>{name}</span>
+                    <button
+                      onClick={() => onRemoveContextItem(item)}
+                      className="ml-0.5 p-0.5 rounded-full hover:bg-white/10 text-text-muted hover:text-text-primary opacity-0 group-hover/chip:opacity-100 transition-opacity"
+                    >
+                      <X className="w-2 h-2" />
+                    </button>
+                  </span>
+                )
+              }
+              // Other context types can be added here if needed
+              return null
+            })}
+
+            {/* Parsed Refs (Visual Feedback for typed mentions) - Filter out duplicates if needed */}
+            {/* For now, we keep them but maybe we should hide them if they are already in contextItems? */}
+            {/* Let's show special refs first */}
+
             {hasCodebaseRef && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-500/5 text-purple-400 text-[10px] font-medium rounded border border-purple-500/10 animate-fade-in select-none">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-purple-500/10 text-purple-400 text-[10px] font-medium rounded-full border border-purple-500/20 animate-fade-in select-none">
                 <Database className="w-2.5 h-2.5" />
                 Codebase
               </span>
             )}
             {hasSymbolsRef && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/5 text-blue-400 text-[10px] font-medium rounded border border-blue-500/10 animate-fade-in select-none">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-blue-500/10 text-blue-400 text-[10px] font-medium rounded-full border border-blue-500/20 animate-fade-in select-none">
                 <Code className="w-2.5 h-2.5" />
                 Symbols
               </span>
             )}
             {hasGitRef && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-orange-500/5 text-orange-400 text-[10px] font-medium rounded border border-orange-500/10 animate-fade-in select-none">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-orange-500/10 text-orange-400 text-[10px] font-medium rounded-full border border-orange-500/20 animate-fade-in select-none">
                 <GitBranch className="w-2.5 h-2.5" />
                 Git
               </span>
             )}
             {hasTerminalRef && (
-              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-500/5 text-green-400 text-[10px] font-medium rounded border border-green-500/10 animate-fade-in select-none">
+              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-green-500/10 text-green-400 text-[10px] font-medium rounded-full border border-green-500/20 animate-fade-in select-none">
                 <Terminal className="w-2.5 h-2.5" />
                 Terminal
               </span>
             )}
-            {fileRefs.map((ref, i) => (
-              <span
-                key={i}
-                className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-white/5 text-text-secondary text-[10px] font-medium rounded border border-white/5 animate-fade-in select-none"
-              >
-                <FileText className="w-2.5 h-2.5 opacity-70" />
-                {ref}
-              </span>
-            ))}
           </div>
         )}
 
-        <div className="flex items-end gap-2 pl-2.5 pr-1.5 py-1.5">
+        <div className="flex items-end gap-2 pl-4 pr-2 py-2">
           <textarea
             ref={textareaRef}
             value={input}
@@ -192,14 +233,14 @@ export default function ChatInput({
             onBlur={() => setIsFocused(false)}
             placeholder={hasApiKey ? t('pasteImagesHint', language) : t('configureApiKey', language)}
             disabled={!hasApiKey || hasPendingToolCall}
-            className="flex-1 bg-transparent border-none p-0 py-1.5
+            className="flex-1 bg-transparent border-none p-0 py-2
                        text-sm text-text-primary placeholder-text-muted/60 resize-none
                        focus:ring-0 focus:outline-none leading-relaxed custom-scrollbar max-h-[200px] caret-accent"
             rows={1}
-            style={{ minHeight: '36px', fontSize: `${editorConfig.fontSize}px` }}
+            style={{ minHeight: '40px', fontSize: `${editorConfig.fontSize}px` }}
           />
 
-          <div className="flex items-center gap-1 pb-0.5">
+          <div className="flex items-center gap-1 pb-1">
             <input
               type="file"
               ref={fileInputRef}
@@ -218,8 +259,9 @@ export default function ChatInput({
               size="icon"
               onClick={() => fileInputRef.current?.click()}
               title={t('uploadImage', language)}
+              className="rounded-full w-8 h-8 hover:bg-white/10 text-text-muted hover:text-text-primary transition-colors"
             >
-              <Paperclip className="w-3.5 h-3.5" />
+              <Paperclip className="w-4 h-4" />
             </Button>
 
             <button
@@ -227,27 +269,27 @@ export default function ChatInput({
               disabled={
                 !hasApiKey || ((!input.trim() && images.length === 0) && !isStreaming) || hasPendingToolCall
               }
-              className={`w-7 h-7 rounded-lg flex items-center justify-center transition-all duration-200
+              className={`w-8 h-8 rounded-full flex items-center justify-center transition-all duration-200 ml-1
                   ${isStreaming
                   ? 'bg-transparent border border-status-error text-status-error hover:bg-status-error/10'
                   : input.trim() || images.length > 0
                     ? 'bg-accent text-white shadow-lg shadow-accent/20 hover:scale-105 hover:bg-accent-hover'
-                    : 'bg-surface-active text-text-muted cursor-not-allowed'
+                    : 'bg-white/5 text-text-muted/30 cursor-not-allowed'
                 }
                   `}
             >
               {isStreaming ? (
-                <div className="w-2 h-2 bg-current rounded-[1px]" />
+                <div className="w-2.5 h-2.5 bg-current rounded-[1px]" />
               ) : (
-                <ArrowUp className="w-3.5 h-3.5 stroke-[3]" />
+                <ArrowUp className="w-4 h-4 stroke-[3]" />
               )}
             </button>
           </div>
         </div>
       </div>
 
-      <div className="mt-1.5 flex items-center justify-between px-2">
-        <div className="flex items-center gap-1 bg-white/5 rounded-lg p-0.5 border border-white/5">
+      <div className="mt-2 flex items-center justify-between px-2">
+        <div className="flex items-center gap-1">
           <ModeButton
             active={chatMode === 'chat'}
             onClick={() => setChatMode('chat')}
@@ -259,7 +301,7 @@ export default function ChatInput({
             onClick={() => setChatMode('agent')}
             accent
           >
-            <Sparkles className="w-2.5 h-2.5" />
+            <Sparkles className="w-3 h-3" />
             AGENT
           </ModeButton>
           <PlanModeButton chatMode={chatMode} />
@@ -287,11 +329,11 @@ function ModeButton({
   return (
     <button
       onClick={onClick}
-      className={`h-6 px-2.5 gap-1.5 text-[10px] font-bold transition-all duration-200 rounded-md flex items-center
+      className={`h-6 px-3 gap-1.5 text-[10px] font-bold transition-all duration-200 rounded-full flex items-center
         ${active
           ? accent
-            ? 'bg-accent/10 text-accent shadow-sm shadow-accent/5'
-            : 'bg-surface text-text-primary shadow-sm'
+            ? 'bg-accent/10 text-accent shadow-sm shadow-accent/5 ring-1 ring-accent/20'
+            : 'bg-white/10 text-text-primary shadow-sm ring-1 ring-white/10'
           : 'text-text-muted hover:text-text-secondary hover:bg-white/5'
         }`}
     >
@@ -311,10 +353,10 @@ function PlanModeButton({ chatMode }: { chatMode: 'chat' | 'agent' }) {
     return (
       <button
         disabled
-        className="h-6 px-2.5 gap-1.5 text-[10px] font-bold rounded-md flex items-center text-text-muted/30 cursor-not-allowed"
+        className="h-6 px-3 gap-1.5 text-[10px] font-bold rounded-full flex items-center text-text-muted/30 cursor-not-allowed"
         title="切换到 Agent 模式后可开启"
       >
-        <ClipboardList className="w-2.5 h-2.5" />
+        <ClipboardList className="w-3 h-3" />
         PLAN
       </button>
     )
@@ -323,13 +365,13 @@ function PlanModeButton({ chatMode }: { chatMode: 'chat' | 'agent' }) {
   return (
     <button
       onClick={() => setMode(isPlan ? 'agent' : 'plan')}
-      className={`h-6 px-2.5 gap-1.5 text-[10px] font-bold transition-all duration-200 rounded-md flex items-center
+      className={`h-6 px-3 gap-1.5 text-[10px] font-bold transition-all duration-200 rounded-full flex items-center
         ${isPlan
-          ? 'bg-purple-500/10 text-purple-400 shadow-sm shadow-purple-500/5'
+          ? 'bg-purple-500/10 text-purple-400 shadow-sm shadow-purple-500/5 ring-1 ring-purple-500/20'
           : 'text-text-muted hover:text-text-secondary hover:bg-white/5'
         }`}
     >
-      <ClipboardList className="w-2.5 h-2.5" />
+      <ClipboardList className="w-3 h-3" />
       PLAN
     </button>
   )

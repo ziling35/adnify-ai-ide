@@ -3,18 +3,16 @@
  * 支持流式参数预览、状态指示、结果展示、代码高亮
  */
 
-import { useStore } from '../../store'
-import { t } from '../../i18n'
-import { useState, useMemo, useEffect, memo } from 'react'
+import React, { useState, useMemo, useEffect, memo } from 'react'
 import {
   Check, X, ChevronDown, ChevronRight, Loader2,
   Terminal, Search, FolderOpen, FileText, Edit3,
-  Trash2, Eye, Copy, ArrowRight, AlertTriangle,
+  Trash2, Copy, AlertTriangle,
   Globe, Link2, MessageCircle
 } from 'lucide-react'
+import { useStore } from '../../store'
+import { t } from '../../i18n'
 import { ToolCall } from '../../agent/core/types'
-import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
-import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
 
 interface ToolCallCardProps {
   toolCall: ToolCall
@@ -24,20 +22,7 @@ interface ToolCallCardProps {
   onApproveAll?: () => void
 }
 
-// 工具图标映射
-const TOOL_ICONS: Record<string, React.ReactNode> = {
-  run_command: <Terminal className="w-3.5 h-3.5" />,
-  search_files: <Search className="w-3.5 h-3.5" />,
-  list_directory: <FolderOpen className="w-3.5 h-3.5" />,
-  read_file: <Eye className="w-3.5 h-3.5" />,
-  write_file: <Edit3 className="w-3.5 h-3.5" />,
-  create_file: <FileText className="w-3.5 h-3.5" />,
-  edit_file: <Edit3 className="w-3.5 h-3.5" />,
-  delete_file_or_folder: <Trash2 className="w-3.5 h-3.5" />,
-  web_search: <Globe className="w-3.5 h-3.5" />,
-  read_url: <Link2 className="w-3.5 h-3.5" />,
-  ask_user: <MessageCircle className="w-3.5 h-3.5" />,
-}
+
 
 // 工具标签映射
 const TOOL_LABELS: Record<string, string> = {
@@ -54,21 +39,6 @@ const TOOL_LABELS: Record<string, string> = {
   ask_user: 'Ask User',
 }
 
-// 工具颜色映射
-const TOOL_COLORS: Record<string, string> = {
-  run_command: 'text-green-400',
-  search_files: 'text-blue-400',
-  list_directory: 'text-yellow-400',
-  read_file: 'text-cyan-400',
-  write_file: 'text-purple-400',
-  create_file: 'text-emerald-400',
-  edit_file: 'text-orange-400',
-  delete_file_or_folder: 'text-red-400',
-  web_search: 'text-sky-400',
-  read_url: 'text-indigo-400',
-  ask_user: 'text-pink-400',
-}
-
 const ToolCallCard = memo(function ToolCallCard({
   toolCall,
   isAwaitingApproval,
@@ -77,7 +47,7 @@ const ToolCallCard = memo(function ToolCallCard({
   onApproveAll,
 }: ToolCallCardProps) {
   const [isExpanded, setIsExpanded] = useState(false)
-  const { language, setTerminalVisible } = useStore()
+  const { language, setTerminalVisible, setPendingTerminalCommand } = useStore()
 
   const args = toolCall.arguments as Record<string, unknown>
   const isStreaming = args._streaming === true
@@ -88,41 +58,18 @@ const ToolCallCard = memo(function ToolCallCard({
 
   // 自动展开 logic
   useEffect(() => {
-    if ((isRunning || isStreaming || isSuccess) && (toolCall.name === 'edit_file' || toolCall.name === 'write_file' || toolCall.name === 'create_file')) {
+    // 只有在运行中或者是特定类型的工具才自动展开
+    if (isRunning || isStreaming) {
       setIsExpanded(true)
     }
-  }, [isRunning, isStreaming, isSuccess, toolCall.name])
-
-  // 获取主要的代码内容参数
-  const codeContent = useMemo(() => {
-    if (!args) return null
-    return (args.code || args.content || args.search_replace_blocks || args.replacement || args.source) as string
-  }, [args])
-
-  // 根据文件路径推断语言
-  const codeLanguage = useMemo(() => {
-    const path = args?.path as string
-    if (!path) return 'text'
-    const ext = path.split('.').pop()?.toLowerCase()
-    const langMap: Record<string, string> = {
-      ts: 'typescript', tsx: 'tsx', js: 'javascript', jsx: 'jsx',
-      py: 'python', rs: 'rust', go: 'go', java: 'java',
-      cpp: 'cpp', c: 'c', h: 'c', hpp: 'cpp',
-      css: 'css', scss: 'scss', less: 'less',
-      html: 'html', vue: 'vue', svelte: 'svelte',
-      json: 'json', yaml: 'yaml', yml: 'yaml', toml: 'toml',
-      md: 'markdown', sql: 'sql', sh: 'bash', bash: 'bash',
-      xml: 'xml', graphql: 'graphql', prisma: 'prisma',
-    }
-    return langMap[ext || ''] || 'text'
-  }, [args])
+  }, [isRunning, isStreaming])
 
   // 获取简短描述
   const description = useMemo(() => {
     const name = toolCall.name
     if (name === 'run_command') {
       const cmd = args.command as string
-      return cmd?.length > 60 ? cmd.slice(0, 60) + '...' : cmd
+      return cmd
     }
     if (name === 'read_file' || name === 'write_file' || name === 'create_file' || name === 'edit_file') {
       const path = args.path as string
@@ -136,21 +83,9 @@ const ToolCallCard = memo(function ToolCallCard({
       const path = args.path as string
       return path?.split(/[\\/]/).pop() || path || '.'
     }
-    if (name === 'delete_file_or_folder') {
-      const path = args.path as string
-      return path?.split(/[\\/]/).pop() || path
-    }
     if (name === 'web_search') {
       const query = args.query as string
       return query ? `"${query}"` : ''
-    }
-    if (name === 'read_url') {
-      const url = args.url as string
-      return url?.length > 50 ? url.slice(0, 50) + '...' : url
-    }
-    if (name === 'ask_user') {
-      const question = args.question as string
-      return question?.length > 50 ? question.slice(0, 50) + '...' : question
     }
     return ''
   }, [toolCall.name, args])
@@ -161,241 +96,221 @@ const ToolCallCard = memo(function ToolCallCard({
     }
   }
 
-  const StatusIndicator = () => {
-    if (isStreaming) {
+  // 渲染不同类型的预览内容
+  const renderPreview = () => {
+    const name = toolCall.name
+
+    // 1. 终端命令预览
+    if (name === 'run_command') {
+      const cmd = args.command as string
       return (
-        <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-accent/10 rounded-full border border-accent/20">
-          <div className="w-1.5 h-1.5 bg-accent rounded-full animate-pulse" />
-          <span className="text-[9px] font-medium text-accent uppercase tracking-wider">{t('toolStreaming', language)}</span>
+        <div className="bg-black/40 rounded-md border border-white/5 overflow-hidden font-mono text-xs">
+          <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/5">
+            <span className="text-text-muted flex items-center gap-2">
+              <Terminal className="w-3 h-3" />
+              Terminal
+            </span>
+            {isSuccess && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  const cwd = (toolCall as any).meta?.cwd || args.cwd
+                  setPendingTerminalCommand({
+                    command: cmd,
+                    cwd: cwd,
+                    autoRun: false
+                  })
+                  setTerminalVisible(true)
+                }}
+                className="text-[10px] px-1.5 py-0.5 bg-white/5 hover:bg-white/10 rounded text-text-muted hover:text-accent transition-colors"
+              >
+                Open
+              </button>
+            )}
+          </div>
+          <div className="p-3 text-text-secondary overflow-x-auto custom-scrollbar">
+            <div className="flex gap-2">
+              <span className="text-accent select-none">$</span>
+              <span className="text-green-400">{cmd}</span>
+            </div>
+            {toolCall.result && (
+              <div className="mt-2 text-text-muted opacity-80 whitespace-pre-wrap break-all border-t border-white/5 pt-2">
+                {toolCall.result.slice(0, 500)}
+                {toolCall.result.length > 500 && <span className="opacity-50">... (truncated)</span>}
+              </div>
+            )}
+          </div>
         </div>
       )
     }
-    if (isRunning) {
+
+    // 2. 文件搜索预览
+    if (name === 'search_files' || name === 'web_search') {
       return (
-        <div className="flex items-center gap-1.5 px-1.5 py-0.5 bg-accent/10 rounded-full border border-accent/20">
-          <Loader2 className="w-2.5 h-2.5 text-accent animate-spin" />
-          <span className="text-[9px] font-medium text-accent uppercase tracking-wider">Running</span>
+        <div className="bg-black/20 rounded-md border border-white/5 overflow-hidden">
+          <div className="px-3 py-2 border-b border-white/5 flex items-center gap-2 text-xs text-text-muted">
+            <Search className="w-3 h-3" />
+            <span>Query: <span className="text-text-primary font-medium">{(args.pattern || args.query) as string}</span></span>
+          </div>
+          {toolCall.result && (
+            <div className="max-h-48 overflow-y-auto custom-scrollbar p-1">
+              {/* 尝试解析结果如果是 JSON 列表 */}
+              <pre className="text-[11px] font-mono text-text-muted whitespace-pre-wrap break-all p-2">
+                {toolCall.result.slice(0, 800)}
+                {toolCall.result.length > 800 && '\n...'}
+              </pre>
+            </div>
+          )}
         </div>
       )
     }
-    if (isSuccess) {
-      return <Check className="w-3.5 h-3.5 text-green-400" />
-    }
-    if (isError) {
-      return <X className="w-3.5 h-3.5 text-red-400" />
-    }
-    if (isRejected) {
-      return <X className="w-3.5 h-3.5 text-yellow-400" />
-    }
-    return null
+
+    // 3. 默认通用预览
+    return (
+      <div className="space-y-2">
+        {/* 参数 */}
+        {Object.keys(args).filter(k => !k.startsWith('_')).length > 0 && (
+          <div className="bg-black/20 rounded-md border border-white/5 p-2">
+            <div className="space-y-1">
+              {Object.entries(args)
+                .filter(([key]) => !key.startsWith('_'))
+                .map(([key, value]) => (
+                  <div key={key} className="flex gap-2 text-[11px]">
+                    <span className="text-text-muted shrink-0 w-20 text-right opacity-60">{key}:</span>
+                    <span className="text-text-secondary font-mono break-all">
+                      {typeof value === 'string' ? value : JSON.stringify(value)}
+                    </span>
+                  </div>
+                ))
+              }
+            </div>
+          </div>
+        )}
+
+        {/* 结果 */}
+        {toolCall.result && (
+          <div className="bg-black/20 rounded-md border border-white/5 overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-1.5 bg-white/5 border-b border-white/5">
+              <span className="text-[10px] text-text-muted uppercase tracking-wider font-medium">Result</span>
+              <button
+                onClick={(e) => { e.stopPropagation(); handleCopyResult() }}
+                className="p-1 hover:bg-white/10 rounded text-text-muted hover:text-text-primary transition-colors"
+              >
+                <Copy className="w-3 h-3" />
+              </button>
+            </div>
+            <div className="max-h-48 overflow-auto custom-scrollbar p-2">
+              <pre className="text-[11px] font-mono text-text-muted whitespace-pre-wrap break-all">
+                {toolCall.result.slice(0, 800)}
+                {toolCall.result.length > 800 && '\n... (truncated)'}
+              </pre>
+            </div>
+          </div>
+        )}
+      </div>
+    )
   }
 
   return (
-    <div className={`my-1.5 rounded-lg border overflow-hidden transition-all duration-300 ${isAwaitingApproval
-      ? 'border-yellow-500/30 bg-yellow-500/5 shadow-[0_0_20px_-5px_rgba(234,179,8,0.15)] ring-1 ring-yellow-500/20'
-      : isError
-        ? 'border-red-500/20 bg-red-500/5'
-        : 'border-white/5 bg-surface/20 hover:bg-surface/30' // Flatter design
-      }`}>
-      {/* 头部 */}
+    <div className={`
+      group my-1.5 rounded-lg border transition-all duration-200
+      ${isAwaitingApproval
+        ? 'border-yellow-500/30 bg-yellow-500/5'
+        : isError
+          ? 'border-red-500/20 bg-red-500/5'
+          : 'border-white/5 bg-transparent hover:border-white/10'
+      }
+    `}>
+      {/* Header */}
       <div
-        className="flex items-center gap-3 px-3 py-2 cursor-pointer select-none group"
+        className="flex items-center gap-3 px-3 py-2 cursor-pointer select-none"
         onClick={() => setIsExpanded(!isExpanded)}
       >
-        <div className={`p-1.5 rounded-md bg-white/5 border border-white/5 ${TOOL_COLORS[toolCall.name] || 'text-text-muted'} group-hover:bg-white/10 transition-colors shadow-inner`}>
-          {TOOL_ICONS[toolCall.name] || <span className="text-[10px]">⚡</span>}
+        {/* Status Icon */}
+        <div className="shrink-0">
+          {isStreaming || isRunning ? (
+            <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
+          ) : isSuccess ? (
+            <Check className="w-3.5 h-3.5 text-green-400" />
+          ) : isError ? (
+            <X className="w-3.5 h-3.5 text-red-400" />
+          ) : isRejected ? (
+            <X className="w-3.5 h-3.5 text-yellow-400" />
+          ) : (
+            <div className="w-3.5 h-3.5 rounded-full border border-text-muted/30" />
+          )}
         </div>
 
-        <div className="flex-1 min-w-0 flex items-center gap-2">
-          <span className="text-xs font-medium text-text-secondary group-hover:text-text-primary transition-colors">
+        {/* Title & Description */}
+        <div className="flex-1 min-w-0 flex items-center gap-2 overflow-hidden">
+          <span className="text-xs font-medium text-text-secondary group-hover:text-text-primary transition-colors whitespace-nowrap">
             {TOOL_LABELS[toolCall.name] || toolCall.name}
           </span>
 
           {description && (
-            <div className="flex items-center gap-1.5 min-w-0">
-              <ArrowRight className="w-3 h-3 text-text-muted/40" />
-              <span className="text-[11px] text-text-muted truncate font-mono opacity-60 group-hover:opacity-90 transition-opacity">
+            <>
+              <span className="text-text-muted/20">|</span>
+              <span className="text-[11px] text-text-muted truncate font-mono opacity-70">
                 {description}
               </span>
-            </div>
+            </>
           )}
         </div>
 
-        <div className="flex items-center gap-3">
-          {/* Open Terminal Button */}
-          {toolCall.name === 'run_command' && (
-            <button
-              onClick={(e) => {
-                e.stopPropagation()
-                const args = toolCall.arguments as any
-                const command = args.command || ''
-                const cwd = (toolCall as any).meta?.cwd || args.cwd
-
-                // Set pending command to be pasted into terminal
-                useStore.getState().setPendingTerminalCommand({
-                  command: command,
-                  cwd: cwd,
-                  autoRun: false // Don't auto-run, just paste it for the user
-                })
-                setTerminalVisible(true)
-              }}
-              className="p-1 hover:bg-white/10 rounded text-text-muted hover:text-accent transition-colors"
-              title="Open Terminal with Command"
-            >
-              <Terminal className="w-3.5 h-3.5" />
-            </button>
-          )}
-
-          <StatusIndicator />
-          <button className="p-1 hover:bg-white/10 rounded-md transition-colors text-text-muted/70 hover:text-text-primary">
-            {isExpanded ? (
-              <ChevronDown className="w-3.5 h-3.5" />
-            ) : (
-              <ChevronRight className="w-3.5 h-3.5" />
-            )}
-          </button>
+        {/* Expand Toggle */}
+        <div className="shrink-0 text-text-muted/50 group-hover:text-text-muted transition-colors">
+          {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
         </div>
       </div>
 
-      {/* 展开的详情 */}
+      {/* Expanded Content */}
       {isExpanded && (
-        <div className="border-t border-white/5 bg-black/10 animate-slide-down">
+        <div className="px-3 pb-3 pt-0 animate-slide-down">
+          <div className="pl-6.5"> {/* Indent to align with text start */}
+            {renderPreview()}
 
-          {/* 代码预览 (Streaming Args) - 带语法高亮 */}
-          {codeContent && (
-            <div className="border-b border-white/5">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-white/[0.02]">
-                <span className="text-[10px] text-text-muted uppercase tracking-wider opacity-70 flex items-center gap-1.5 font-medium">
-                  <Edit3 className="w-3 h-3" />
-                  {isStreaming || isRunning ? 'Generating Code...' : 'Code Change'}
-                  {codeLanguage !== 'text' && (
-                    <span className="ml-1 px-1.5 py-0.5 bg-white/5 rounded text-[9px] border border-white/5">{codeLanguage}</span>
-                  )}
-                </span>
+            {/* Error Message */}
+            {toolCall.error && (
+              <div className="mt-2 px-3 py-2 bg-red-500/10 border border-red-500/20 rounded-md">
+                <div className="flex items-center gap-2 text-red-400 text-xs font-medium mb-1">
+                  <AlertTriangle className="w-3 h-3" />
+                  Error
+                </div>
+                <p className="text-[11px] text-red-300 font-mono break-all">{toolCall.error}</p>
               </div>
-              <div className="max-h-64 overflow-auto custom-scrollbar relative">
-                <SyntaxHighlighter
-                  language={codeLanguage}
-                  style={oneDark}
-                  customStyle={{
-                    margin: 0,
-                    padding: '12px 16px',
-                    fontSize: '11px',
-                    lineHeight: '1.5',
-                    background: 'transparent',
-                    borderLeft: '2px solid rgba(var(--accent-rgb), 0.3)',
-                  }}
-                  wrapLongLines
-                >
-                  {codeContent}
-                </SyntaxHighlighter>
-                {(isStreaming || isRunning) && (
-                  <span className="absolute bottom-3 right-3 inline-block w-2 h-4 bg-accent animate-pulse rounded-sm" />
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* 其他参数预览 */}
-          {Object.keys(args).filter(k => !k.startsWith('_') && k !== 'code' && k !== 'content' && k !== 'replacement' && k !== 'source').length > 0 && (
-            <div className="px-3 py-2">
-              <div className="text-[10px] text-text-muted uppercase tracking-wider mb-2 opacity-70 flex items-center gap-1.5 font-medium">
-                <Terminal className="w-3 h-3" />
-                {t('toolArguments', language)}
-              </div>
-              <div className="space-y-1.5 pl-2.5 border-l border-white/10">
-                {Object.entries(args)
-                  .filter(([key]) => !key.startsWith('_') && key !== 'code' && key !== 'content' && key !== 'replacement' && key !== 'source')
-                  .map(([key, value]) => (
-                    <div key={key} className="flex gap-3 text-[11px]">
-                      <span className="text-text-muted shrink-0 w-20 text-right opacity-60">{key}:</span>
-                      <span className="text-text-secondary font-mono break-all">
-                        {typeof value === 'string'
-                          ? value
-                          : JSON.stringify(value)
-                        }
-                      </span>
-                    </div>
-                  ))
-                }
-              </div>
-            </div>
-          )}
-
-          {/* 结果 */}
-          {toolCall.result && (
-            <div className="border-t border-white/5">
-              <div className="flex items-center justify-between px-3 py-1.5 bg-white/[0.02]">
-                <span className="text-[10px] text-text-muted uppercase tracking-wider opacity-70 flex items-center gap-1.5 font-medium">
-                  <FileText className="w-3 h-3" />
-                  {t('toolResult', language)}
-                </span>
-                <button
-                  onClick={(e) => { e.stopPropagation(); handleCopyResult() }}
-                  className="p-1 hover:bg-white/10 rounded text-text-muted hover:text-text-primary transition-colors"
-                  title="Copy result"
-                >
-                  <Copy className="w-3 h-3" />
-                </button>
-              </div>
-              <div className="max-h-48 overflow-auto custom-scrollbar px-3 pb-2 pt-1">
-                <pre className="text-[11px] font-mono text-text-muted whitespace-pre-wrap break-all pl-2.5 border-l border-white/10 leading-relaxed">
-                  {toolCall.result.slice(0, 800)}
-                  {toolCall.result.length > 800 && '\n... (truncated)'}
-                </pre>
-              </div>
-            </div>
-          )}
-
-          {/* 错误信息 */}
-          {toolCall.error && (
-            <div className="px-3 py-2 bg-red-500/5 border-t border-red-500/10">
-              <div className="text-[10px] text-red-400 uppercase tracking-wider mb-1 flex items-center gap-1.5 font-medium">
-                <AlertTriangle className="w-3 h-3" />
-                {t('toolError', language)}
-              </div>
-              <p className="text-[11px] text-red-300 font-mono pl-2.5 border-l border-red-500/20">{toolCall.error}</p>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       )}
 
-      {/* 审批按钮 */}
+      {/* Approval Actions */}
       {isAwaitingApproval && (
-        <div className="flex items-center justify-between px-3 py-2 border-t border-yellow-500/20 bg-yellow-500/5">
-          <span className="text-xs text-yellow-400 font-medium flex items-center gap-2">
-            <Loader2 className="w-3 h-3 animate-spin" />
-            {t('toolWaitingApproval', language)}
-          </span>
-          <div className="flex items-center gap-2">
+        <div className="flex items-center justify-end gap-2 px-3 py-2 border-t border-yellow-500/10 bg-yellow-500/5">
+          <button
+            onClick={onReject}
+            className="px-3 py-1 text-[11px] font-medium text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
+          >
+            {t('toolReject', language)}
+          </button>
+          {onApproveAll && (
             <button
-              onClick={onReject}
-              className="px-3 py-1 text-[11px] font-medium text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded-md transition-colors"
+              onClick={onApproveAll}
+              className="px-3 py-1 text-[11px] font-medium text-text-muted hover:text-accent hover:bg-accent/10 rounded transition-colors"
             >
-              {t('toolReject', language)}
+              {t('toolApproveAll', language)}
             </button>
-            {onApproveAll && (
-              <button
-                onClick={onApproveAll}
-                className="px-3 py-1 text-[11px] font-medium text-text-muted hover:text-accent hover:bg-accent/10 rounded-md transition-colors"
-                title="Approve all similar tools in this session"
-              >
-                {t('toolApproveAll', language)}
-              </button>
-            )}
-            <button
-              onClick={onApprove}
-              className="px-3 py-1 text-[11px] font-medium bg-accent text-white hover:bg-accent-hover rounded-md transition-colors shadow-sm shadow-accent/20"
-            >
-              {t('toolApprove', language)}
-            </button>
-          </div>
+          )}
+          <button
+            onClick={onApprove}
+            className="px-3 py-1 text-[11px] font-medium bg-accent text-white hover:bg-accent-hover rounded transition-colors shadow-sm shadow-accent/20"
+          >
+            {t('toolApprove', language)}
+          </button>
         </div>
       )}
     </div>
   )
 }, (prevProps, nextProps) => {
-  // 自定义比较函数：只在关键属性变化时重渲染
   return (
     prevProps.toolCall.id === nextProps.toolCall.id &&
     prevProps.toolCall.status === nextProps.toolCall.status &&

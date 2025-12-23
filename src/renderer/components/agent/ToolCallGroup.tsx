@@ -1,10 +1,11 @@
 /**
  * 工具调用组组件
  * 用于合并显示连续的工具调用，减少刷屏
+ * 新设计：统一的时间轴样式，运行中的工具单独显示
  */
 
 import { useState, useMemo } from 'react'
-import { ChevronDown, ChevronRight, Eye } from 'lucide-react'
+import { ChevronDown, ChevronRight, Layers, CheckCircle2 } from 'lucide-react'
 import { ToolCall } from '@/renderer/agent/core/types'
 import ToolCallCard from './ToolCallCard'
 import FileChangeCard from './FileChangeCard'
@@ -28,24 +29,25 @@ export default function ToolCallGroup({
     onApproveAll,
     onOpenDiff,
 }: ToolCallGroupProps) {
-    const [isReadExpanded, setIsReadExpanded] = useState(false)
+    const [isExpanded, setIsExpanded] = useState(false)
     const { language } = useStore()
 
-    // 分离读写工具
-    const { readCalls, writeCalls } = useMemo(() => {
-        const read: ToolCall[] = []
-        const write: ToolCall[] = []
+    // 分离：已完成/失败的工具 vs 正在运行/等待的工具
+    const { completedCalls, activeCalls } = useMemo(() => {
+        const completed: ToolCall[] = []
+        const active: ToolCall[] = []
 
         toolCalls.forEach(tc => {
-            // 终端命令也视为"写"操作（重要操作）
-            if (WRITE_TOOLS.includes(tc.name) || tc.name === 'run_command' || tc.name === 'delete_file_or_folder') {
-                write.push(tc)
+            const isRunning = tc.status === 'running' || tc.status === 'pending'
+            // 如果是 pendingToolId 对应的工具，也视为 active
+            if (isRunning || tc.id === pendingToolId) {
+                active.push(tc)
             } else {
-                read.push(tc)
+                completed.push(tc)
             }
         })
-        return { readCalls: read, writeCalls: write }
-    }, [toolCalls])
+        return { completedCalls: completed, activeCalls: active }
+    }, [toolCalls, pendingToolId])
 
     // 渲染单个工具卡片
     const renderToolCard = (tc: ToolCall) => {
@@ -77,50 +79,50 @@ export default function ToolCallGroup({
         )
     }
 
-    // 如果工具数量很少（<= 3），且没有混合大量读操作，直接扁平展示
-    if (toolCalls.length <= 3 && readCalls.length <= 1) {
-        return (
-            <div className="space-y-2 my-2">
-                {toolCalls.map(renderToolCard)}
-            </div>
-        )
-    }
-
     return (
         <div className="my-2 space-y-2">
-            {/* 读操作分组 (如果有多个) */}
-            {readCalls.length > 0 && (
-                <div className="rounded-lg border border-white/5 bg-surface/20 overflow-hidden">
-                    <div
-                        className="flex items-center gap-2 px-3 py-2 cursor-pointer hover:bg-white/5 transition-colors select-none"
-                        onClick={() => setIsReadExpanded(!isReadExpanded)}
-                    >
-                        <div className="p-1 rounded-md bg-white/5 text-text-muted">
-                            <Eye className="w-3.5 h-3.5" />
+            {/* 1. 已完成的工具组 (如果数量 > 1，折叠显示) */}
+            {completedCalls.length > 0 && (
+                completedCalls.length === 1 ? (
+                    // 只有一个已完成工具，直接显示
+                    renderToolCard(completedCalls[0])
+                ) : (
+                    // 多个已完成工具，折叠显示
+                    <div className="rounded-lg border border-white/5 bg-white/[0.02] overflow-hidden transition-colors hover:bg-white/[0.04]">
+                        <div
+                            className="flex items-center gap-2 px-3 py-2 cursor-pointer select-none"
+                            onClick={() => setIsExpanded(!isExpanded)}
+                        >
+                            <div className="p-1 rounded-md bg-white/5 text-text-muted">
+                                <Layers className="w-3.5 h-3.5" />
+                            </div>
+                            <div className="flex-1 min-w-0 flex items-center gap-2">
+                                <span className="text-xs font-medium text-text-secondary">
+                                    {language === 'zh'
+                                        ? `已执行 ${completedCalls.length} 个操作`
+                                        : `Executed ${completedCalls.length} steps`}
+                                </span>
+                                <div className="h-px flex-1 bg-white/5 mx-2" />
+                            </div>
+                            <div className="text-text-muted/50">
+                                {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
+                            </div>
                         </div>
-                        <span className="text-xs font-medium text-text-secondary flex-1">
-                            {language === 'zh'
-                                ? `读取了 ${readCalls.length} 个文件/资源`
-                                : `Read ${readCalls.length} files/resources`}
-                        </span>
-                        {isReadExpanded ? (
-                            <ChevronDown className="w-3.5 h-3.5 text-text-muted" />
-                        ) : (
-                            <ChevronRight className="w-3.5 h-3.5 text-text-muted" />
+
+                        {isExpanded && (
+                            <div className="border-t border-white/5 p-2 space-y-2 bg-black/10 animate-slide-down">
+                                {/* Timeline connector line could go here if we want strictly timeline look */}
+                                {completedCalls.map(renderToolCard)}
+                            </div>
                         )}
                     </div>
-                    {isReadExpanded && (
-                        <div className="border-t border-white/5 p-2 space-y-2 bg-black/10">
-                            {readCalls.map(renderToolCard)}
-                        </div>
-                    )}
-                </div>
+                )
             )}
 
-            {/* 写操作直接展示 (重要操作不折叠) */}
-            {writeCalls.length > 0 && (
-                <div className="space-y-2">
-                    {writeCalls.map(renderToolCard)}
+            {/* 2. 正在运行/等待的工具 (始终展开，直接显示) */}
+            {activeCalls.length > 0 && (
+                <div className="space-y-2 animate-fade-in">
+                    {activeCalls.map(renderToolCard)}
                 </div>
             )}
         </div>

@@ -28,9 +28,7 @@ import MentionPopup from '@/renderer/components/agent/MentionPopup'
 import { MentionParser, MentionCandidate } from '@/renderer/agent/core/MentionParser'
 import ChatMessageUI from './ChatMessage'
 import AgentStatusBar from './AgentStatusBar'
-import ContextPanel from './ContextPanel'
 import { keybindingService } from '@/renderer/services/keybindingService'
-import SlashCommandPopup from './SlashCommandPopup'
 import { slashCommandService, SlashCommand } from '@/renderer/services/slashCommandService'
 import { AgentService } from '@/renderer/agent/core/AgentService'
 import { Button } from '../ui'
@@ -278,13 +276,6 @@ export default function ChatPanel() {
     const textBeforeMention = input.slice(0, mentionRange.start)
     const textAfterMention = input.slice(mentionRange.end)
 
-    // Replace with label, but maybe we want to keep the @?
-    // Usually we replace "@query" with "@label "
-    // But for special mentions like @codebase, we keep it as is.
-    // For files, we might want to show just the filename but store the full path?
-    // The ChatInput detects @file:path or just path.
-    // Let's stick to the previous behavior: replace with the value.
-
     let replacement = ''
     let contextItem: ContextItem | null = null
 
@@ -307,10 +298,6 @@ export default function ChatPanel() {
         break
       case 'file':
       case 'folder':
-        // For files, we insert the relative path
-        // ChatInput regex expects: /@(?:file:)?([^\s@]+\.[a-zA-Z0-9]+)/g
-        // So we can just insert the path.
-        // Or we can use the format @file:path
         replacement = `@${candidate.description || candidate.label} `
         contextItem = {
           type: candidate.type === 'folder' ? 'Folder' : 'File',
@@ -501,21 +488,19 @@ export default function ChatPanel() {
     const hasCheckpoint = isUserMessage(msg) && messageCheckpoints.some(cp => cp.messageId === msg.id)
 
     return (
-      <div className="px-4 py-2">
-        <ChatMessageUI
-          key={msg.id}
-          message={msg}
-          onEdit={handleEditMessage}
-          onRegenerate={handleRegenerate}
-          onRestore={handleRestore}
-          onApproveTool={approveCurrentTool}
-          onRejectTool={rejectCurrentTool}
-          onApproveAll={approveAllCurrentTool}
-          onOpenDiff={handleShowDiff}
-          pendingToolId={pendingToolCall?.id}
-          hasCheckpoint={hasCheckpoint}
-        />
-      </div>
+      <ChatMessageUI
+        key={msg.id}
+        message={msg}
+        onEdit={handleEditMessage}
+        onRegenerate={handleRegenerate}
+        onRestore={handleRestore}
+        onApproveTool={approveCurrentTool}
+        onRejectTool={rejectCurrentTool}
+        onApproveAll={approveAllCurrentTool}
+        onOpenDiff={handleShowDiff}
+        pendingToolId={pendingToolCall?.id}
+        hasCheckpoint={hasCheckpoint}
+      />
     )
   }, [handleEditMessage, handleRegenerate, handleRestore, approveCurrentTool, rejectCurrentTool, approveAllCurrentTool, handleShowDiff, pendingToolCall, messageCheckpoints])
 
@@ -595,14 +580,8 @@ export default function ChatPanel() {
           </div>
         )}
 
-        {/* Background Decoration */}
-        <div className="absolute inset-0 pointer-events-none overflow-hidden">
-          <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-purple-500/5 rounded-full blur-[100px] opacity-20" />
-          <div className="absolute bottom-[-10%] left-[-10%] w-[400px] h-[400px] bg-blue-500/5 rounded-full blur-[100px] opacity-20" />
-        </div>
-
         {/* Header */}
-        <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2.5 bg-background/60 backdrop-blur-md border-b border-border-subtle select-none">
+        <div className="absolute top-0 left-0 right-0 z-20 flex items-center justify-between px-4 py-2.5 bg-background/80 backdrop-blur-md border-b border-white/5 select-none">
           <div className="flex items-center gap-3">
             {contextStats && (
               <ChatContextStats stats={contextStats} language={language} compact />
@@ -615,7 +594,7 @@ export default function ChatPanel() {
               size="icon"
               onClick={() => setShowThreads(!showThreads)}
               title="Chat history"
-              className="hover:bg-surface/20 text-text-muted hover:text-text-primary"
+              className="hover:bg-white/5 text-text-muted hover:text-text-primary"
             >
               <History className="w-4 h-4" />
             </Button>
@@ -624,11 +603,11 @@ export default function ChatPanel() {
               size="icon"
               onClick={() => createThread()}
               title="New chat"
-              className="hover:bg-surface/20 text-text-muted hover:text-text-primary"
+              className="hover:bg-white/5 text-text-muted hover:text-text-primary"
             >
               <Plus className="w-4 h-4" />
             </Button>
-            <div className="w-px h-4 bg-border-subtle mx-1" />
+            <div className="w-px h-4 bg-white/10 mx-1" />
             <Button
               variant="ghost"
               size="icon"
@@ -643,7 +622,7 @@ export default function ChatPanel() {
 
         {/* Thread list overlay */}
         {showThreads && (
-          <div className="absolute top-[60px] right-0 left-0 bottom-0 bg-background/95 backdrop-blur-md z-30 overflow-hidden p-4 animate-fade-in">
+          <div className="absolute top-[50px] right-0 left-0 bottom-0 bg-background/95 backdrop-blur-md z-30 overflow-hidden p-4 animate-fade-in">
             <div className="flex flex-col gap-2 max-w-2xl mx-auto">
               <div className="flex items-center justify-between mb-2">
                 <h3 className="text-sm font-medium text-text-primary">Chat History</h3>
@@ -660,7 +639,7 @@ export default function ChatPanel() {
                     key={thread.id}
                     className={`flex items-center justify-between p-3 rounded-xl cursor-pointer transition-all duration-200 border group ${currentThreadId === thread.id
                       ? 'bg-accent/10 border-accent/20 text-accent'
-                      : 'bg-surface/30 border-border-subtle hover:border-border hover:bg-surface/50 text-text-secondary'
+                      : 'bg-surface/30 border-white/5 hover:border-white/10 hover:bg-surface/50 text-text-secondary'
                       }`}
                     onClick={() => { switchThread(thread.id); setShowThreads(false) }}
                   >
@@ -703,7 +682,7 @@ export default function ChatPanel() {
         }
 
         {/* Messages Area */}
-        <div className="flex-1 min-h-0 relative z-0 flex flex-col pt-14">
+        <div className="flex-1 min-h-0 relative z-0 flex flex-col pt-12">
           {/* API Key Warning */}
           {!hasApiKey && (
             <div className="m-4 p-4 border border-warning/20 bg-warning/5 rounded-xl flex gap-3 backdrop-blur-sm relative z-10">
@@ -717,20 +696,27 @@ export default function ChatPanel() {
 
           {/* Empty State */}
           {messages.length === 0 ? (
-            <div className="flex-1 flex flex-col items-center justify-center p-8 animate-fade-in select-none">
-              <div className="relative mb-8">
-                <div className="absolute inset-0 bg-accent/20 blur-3xl rounded-full animate-pulse" />
-                <div className="relative w-16 h-16 bg-surface/40 backdrop-blur-2xl rounded-2xl border border-border-subtle flex items-center justify-center shadow-2xl">
-                  <Logo className="w-8 h-8 text-accent opacity-80" glow />
-                </div>
+            <div className="flex flex-col h-full w-full bg-background/40 backdrop-blur-3xl relative overflow-hidden">
+              {/* Background Ambience - More subtle */}
+              <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                <div className="absolute top-[-20%] right-[-10%] w-[500px] h-[500px] bg-accent/5 rounded-full blur-[120px] opacity-50 mix-blend-screen" />
+                <div className="absolute bottom-[-10%] left-[-20%] w-[600px] h-[600px] bg-blue-500/5 rounded-full blur-[120px] opacity-30 mix-blend-screen" />
               </div>
-              <div className="text-center space-y-2">
-                <h1 className="text-xl font-bold text-text-primary tracking-tight opacity-90">
-                  Adnify Agent
-                </h1>
-                <p className="text-sm text-text-muted max-w-[280px] leading-relaxed opacity-60">
-                  {language === 'zh' ? '今天我能帮你构建什么？' : 'What can I help you build today?'}
-                </p>
+              <div className="flex-1 flex flex-col items-center justify-center p-8 animate-fade-in select-none">
+                <div className="relative mb-8">
+                  <div className="absolute inset-0 bg-accent/20 blur-3xl rounded-full animate-pulse" />
+                  <div className="relative w-16 h-16 bg-surface/40 backdrop-blur-2xl rounded-2xl border border-white/10 flex items-center justify-center shadow-2xl">
+                    <Logo className="w-8 h-8 text-accent opacity-80" glow />
+                  </div>
+                </div>
+                <div className="text-center space-y-2">
+                  <h1 className="text-xl font-bold text-text-primary tracking-tight opacity-90">
+                    Adnify Agent
+                  </h1>
+                  <p className="text-sm text-text-muted max-w-[280px] leading-relaxed opacity-60">
+                    {language === 'zh' ? '今天我能帮你构建什么？' : 'What can I help you build today?'}
+                  </p>
+                </div>
               </div>
             </div>
           ) : (
@@ -745,125 +731,102 @@ export default function ChatPanel() {
               style={{ minHeight: '100px' }}
             />
           )}
-        </div>
 
-        {/* File Mention Popup */}
-        {
-          showFileMention && (
-            <MentionPopup
-              position={mentionPosition}
-              query={mentionQuery}
-              candidates={mentionCandidates}
-              loading={mentionLoading}
-              onSelect={handleSelectMention}
-              onClose={() => { setShowFileMention(false); setMentionQuery('') }}
-            />
-          )
-        }
+          {/* File Mention Popup */}
+          {
+            showFileMention && (
+              <MentionPopup
+                position={mentionPosition}
+                query={mentionQuery}
+                candidates={mentionCandidates}
+                loading={mentionLoading}
+                onSelect={handleSelectMention}
+                onClose={() => { setShowFileMention(false); setMentionQuery('') }}
+              />
+            )
+          }
 
-        {/* Bottom Input Area - Unified Tray */}
-        <div className="shrink-0 z-20 flex flex-col">
-          <div className="mx-4 mb-4 bg-background/80 backdrop-blur-2xl border border-border-subtle rounded-2xl shadow-2xl shadow-black/20 overflow-hidden flex flex-col">
-            {/* Status Bar */}
-            <AgentStatusBar
-              pendingChanges={pendingChanges}
-              isStreaming={isStreaming}
-              isAwaitingApproval={isAwaitingApproval}
-              streamingStatus={getStreamingStatus()}
-              onStop={abort}
-              onReviewFile={async (filePath) => {
-                const change = pendingChanges.find(c => c.filePath === filePath)
-                if (!change) return
+          {/* Bottom Input Area - Unified Tray */}
+          <div className="shrink-0 z-20 flex flex-col">
+            <div className="mx-4 mb-4 flex flex-col">
+              {/* Status Bar */}
+              <AgentStatusBar
+                pendingChanges={pendingChanges}
+                isStreaming={isStreaming}
+                isAwaitingApproval={isAwaitingApproval}
+                streamingStatus={getStreamingStatus()}
+                onStop={abort}
+                onReviewFile={async (filePath) => {
+                  const change = pendingChanges.find(c => c.filePath === filePath)
+                  if (!change) return
 
-                const currentContent = await window.electronAPI.readFile(filePath)
-                if (currentContent !== null) {
-                  openFile(filePath, currentContent)
-                  setActiveFile(filePath)
-                  setActiveDiff({
-                    original: change.snapshot.content || '',
-                    modified: currentContent,
-                    filePath,
-                  })
-                }
-              }}
-              onAcceptFile={(filePath) => {
-                acceptChange(filePath)
-                toast.success(`Accepted: ${filePath.split(/[\\/]/).pop()}`)
-              }}
-              onRejectFile={async (filePath) => {
-                const success = await undoChange(filePath)
-                if (success) {
-                  toast.success(`Reverted: ${filePath.split(/[\\/]/).pop()}`)
-                } else {
-                  toast.error('Failed to revert')
-                }
-              }}
-              onUndoAll={async () => {
-                if (pendingChanges.length === 0) {
-                  toast.info('No changes to undo')
-                  return
-                }
-                const result = await undoAllChanges()
-                if (result.success && result.restoredFiles.length > 0) {
-                  toast.success(`Restored ${result.restoredFiles.length} file(s)`)
-                  setActiveDiff(null)
-                } else if (result.errors.length > 0) {
-                  toast.error(`Undo failed: ${result.errors[0]}`)
-                }
-              }}
-              onKeepAll={() => {
-                if (pendingChanges.length === 0) {
-                  toast.info('No changes to accept')
-                  return
-                }
-                acceptAllChanges()
-                setActiveDiff(null)
-                toast.success('Changes accepted')
-              }}
-            />
+                  const currentContent = await window.electronAPI.readFile(filePath)
+                  if (currentContent !== null) {
+                    openFile(filePath, currentContent)
+                    setActiveFile(filePath)
+                    setActiveDiff({
+                      original: change.snapshot.content || '',
+                      modified: currentContent,
+                      filePath,
+                    })
+                  }
+                }}
+                onAcceptFile={(filePath) => {
+                  acceptChange(filePath)
+                  toast.success(`Accepted: ${filePath.split(/[\\/]/).pop()}`)
+                }}
+                onRejectFile={async (filePath) => {
+                  const success = await undoChange(filePath)
+                  if (success) {
+                    toast.success(`Reverted: ${filePath.split(/[\\/]/).pop()}`)
+                  } else {
+                    toast.error('Failed to revert')
+                  }
+                }}
+                onUndoAll={async () => {
+                  const result = await undoAllChanges()
+                  if (result.success) {
+                    toast.success(`Reverted ${result.restoredFiles.length} files`)
+                  } else {
+                    toast.error(`Failed to revert some files: ${result.errors.join(', ')}`)
+                  }
+                }}
+                onKeepAll={() => {
+                  acceptAllChanges()
+                  toast.success('All changes accepted')
+                }}
+              />
 
-            {/* Context Items */}
-            <ContextPanel
-              contextItems={contextItems}
-              activeFilePath={activeFilePath}
-              onRemove={removeContextItem}
-              onClear={clearContextItems}
-              onAddCurrentFile={handleAddCurrentFile}
-            />
-
-            {/* Input */}
-            <ChatInput
-              input={input}
-              setInput={setInput}
-              images={images}
-              setImages={setImages}
-              isStreaming={isStreaming}
-              hasApiKey={hasApiKey}
-              hasPendingToolCall={isAwaitingApproval}
-              chatMode={chatMode}
-              setChatMode={setChatMode}
-              onSubmit={handleSubmit}
-              onAbort={abort}
-              onInputChange={handleInputChange}
-              onKeyDown={handleKeyDown}
-              onPaste={handlePaste}
-              textareaRef={textareaRef}
-              inputContainerRef={inputContainerRef}
-            />
+              {/* Input Component */}
+              <ChatInput
+                input={input}
+                setInput={setInput}
+                images={images}
+                setImages={setImages}
+                isStreaming={isStreaming}
+                hasApiKey={hasApiKey}
+                hasPendingToolCall={!!pendingToolCall}
+                chatMode={chatMode}
+                setChatMode={setChatMode}
+                onSubmit={handleSubmit}
+                onAbort={abort}
+                onInputChange={handleInputChange}
+                onKeyDown={handleKeyDown}
+                onPaste={handlePaste}
+                textareaRef={textareaRef}
+                inputContainerRef={inputContainerRef}
+                contextItems={contextItems}
+                onRemoveContextItem={(item) => {
+                  const index = contextItems.indexOf(item)
+                  if (index !== -1) {
+                    removeContextItem(index)
+                  }
+                }}
+                activeFilePath={activeFilePath}
+                onAddFile={handleAddCurrentFile}
+              />
+            </div>
           </div>
-
-          {/* Slash Command Popup */}
-          {showSlashCommand && (
-            <SlashCommandPopup
-              query={slashCommandQuery}
-              onSelect={handleSlashCommand}
-              onClose={() => {
-                setShowSlashCommand(false)
-                setSlashCommandQuery('')
-              }}
-              position={{ x: 16, y: 60 }}
-            />
-          )}
         </div>
       </div>
     </div>

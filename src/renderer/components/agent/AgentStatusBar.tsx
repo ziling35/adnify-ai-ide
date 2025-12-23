@@ -5,7 +5,7 @@
  */
 
 import { useState } from 'react'
-import { X, Check, ExternalLink, Square, ChevronDown, ChevronRight } from 'lucide-react'
+import { X, Check, ExternalLink, Square, ChevronDown, ChevronRight, Loader2 } from 'lucide-react'
 import { PendingChange } from '../../agent/core/types'
 import { Button } from '../ui'
 
@@ -42,15 +42,15 @@ export default function AgentStatusBar({
   if (!showBar) return null
 
   return (
-    <div className="bg-surface/10 border-b border-border-subtle animate-fade-in">
+    <div className="mb-2 rounded-xl border border-white/10 bg-background/80 backdrop-blur-xl shadow-lg animate-fade-in overflow-hidden">
       {/* 顶部操作栏：文件标签 + 全局操作 */}
       {hasChanges && (
-        <div className="flex items-center justify-between px-3 py-1.5">
+        <div className="flex items-center justify-between px-3 py-2 bg-white/5">
           {/* 左侧：折叠按钮 + 文件标签 */}
-          <div className="flex items-center gap-1.5 overflow-x-auto hide-scrollbar">
+          <div className="flex items-center gap-2 overflow-x-auto hide-scrollbar">
             <button
               onClick={() => setIsExpanded(!isExpanded)}
-              className="p-1 text-text-muted hover:text-text-primary transition-colors hover:bg-surface/20 rounded"
+              className="p-1 text-text-muted hover:text-text-primary transition-colors hover:bg-white/10 rounded"
             >
               {isExpanded ? (
                 <ChevronDown className="w-3.5 h-3.5" />
@@ -58,44 +58,31 @@ export default function AgentStatusBar({
                 <ChevronRight className="w-3.5 h-3.5" />
               )}
             </button>
-            <div className="flex items-center gap-1">
-              {pendingChanges.slice(0, 3).map((change) => {
-                const fileName = change.filePath.split(/[\\/]/).pop() || change.filePath
-                return (
-                  <button
-                    key={change.id}
-                    onClick={() => onReviewFile?.(change.filePath)}
-                    className="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium text-text-secondary hover:text-text-primary hover:bg-surface/20 rounded transition-all whitespace-nowrap border border-transparent hover:border-border-subtle"
-                    title={change.filePath}
-                  >
-                    <span className="w-1 h-1 rounded-full bg-accent/50" />
-                    {fileName}
-                  </button>
-                )
-              })}
-              {pendingChanges.length > 3 && (
-                <span className="text-[10px] text-text-muted px-1.5 font-medium">
-                  +{pendingChanges.length - 3}
-                </span>
-              )}
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
+                Pending Changes
+              </span>
+              <span className="px-1.5 py-0.5 rounded-full bg-accent/10 text-accent text-[10px] font-bold">
+                {pendingChanges.length}
+              </span>
             </div>
           </div>
 
           {/* 右侧：全局操作 */}
-          <div className="flex items-center gap-1.5 ml-2 flex-shrink-0">
+          <div className="flex items-center gap-2 flex-shrink-0">
             <Button
               variant="ghost"
               size="sm"
               onClick={onUndoAll}
-              className="h-6 px-2 text-[10px] text-text-muted hover:text-text-primary"
+              className="h-6 px-2 text-[10px] text-text-muted hover:text-red-400 hover:bg-red-500/10"
             >
-              Undo All
+              Discard All
             </Button>
             <Button
               variant="primary"
               size="sm"
               onClick={onKeepAll}
-              className="h-6 px-3 text-[10px] shadow-lg shadow-accent/20"
+              className="h-6 px-3 text-[10px] bg-accent text-white hover:bg-accent-hover shadow-sm shadow-accent/20"
             >
               Accept All
             </Button>
@@ -105,25 +92,25 @@ export default function AgentStatusBar({
 
       {/* 文件列表 - 可折叠 */}
       {hasChanges && isExpanded && (
-        <div className="max-h-40 overflow-y-auto border-t border-border-subtle custom-scrollbar bg-surface/20">
+        <div className="max-h-40 overflow-y-auto border-t border-white/5 custom-scrollbar bg-black/20">
           {pendingChanges.map((change) => {
             const fileName = change.filePath.split(/[\\/]/).pop() || change.filePath
             return (
               <div
                 key={change.id}
-                className="group flex items-center gap-3 px-4 py-1.5 hover:bg-surface/20 transition-colors"
+                className="group flex items-center gap-3 px-4 py-2 hover:bg-white/5 transition-colors border-b border-white/5 last:border-0"
               >
                 {/* 文件图标 + 名称 */}
                 <div className="w-1.5 h-1.5 rounded-full bg-accent/40 group-hover:bg-accent transition-colors" />
-                <span className="text-[11px] font-medium text-text-primary flex-1 truncate opacity-80 group-hover:opacity-100">
+                <span className="text-[11px] font-medium text-text-secondary flex-1 truncate group-hover:text-text-primary transition-colors">
                   {fileName}
                 </span>
 
                 {/* 行数变化 */}
-                <div className="flex items-center gap-2 text-[10px] font-mono">
-                  <span className="text-green-400/80 group-hover:text-green-400">+{change.linesAdded}</span>
+                <div className="flex items-center gap-2 text-[10px] font-mono opacity-60 group-hover:opacity-100">
+                  <span className="text-green-400">+{change.linesAdded}</span>
                   {change.linesRemoved > 0 && (
-                    <span className="text-red-400/80 group-hover:text-red-400">-{change.linesRemoved}</span>
+                    <span className="text-red-400">-{change.linesRemoved}</span>
                   )}
                 </div>
 
@@ -132,21 +119,21 @@ export default function AgentStatusBar({
                   <button
                     onClick={() => onRejectFile?.(change.filePath)}
                     className="p-1 text-text-muted hover:text-red-400 hover:bg-red-500/10 rounded transition-colors"
-                    title="Reject this change"
+                    title="Reject"
                   >
                     <X className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => onAcceptFile?.(change.filePath)}
                     className="p-1 text-text-muted hover:text-green-400 hover:bg-green-500/10 rounded transition-colors"
-                    title="Accept this change"
+                    title="Accept"
                   >
                     <Check className="w-3.5 h-3.5" />
                   </button>
                   <button
                     onClick={() => onReviewFile?.(change.filePath)}
                     className="p-1 text-text-muted hover:text-accent hover:bg-accent/10 rounded transition-colors"
-                    title="Review in diff view"
+                    title="Diff"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                   </button>
@@ -159,16 +146,13 @@ export default function AgentStatusBar({
 
       {/* 流式状态 / 等待审批状态 */}
       {(isStreaming || isAwaitingApproval) && (
-        <div className="flex items-center justify-between px-4 py-1.5 border-t border-border-subtle bg-accent/5">
+        <div className={`flex items-center justify-between px-4 py-2 ${hasChanges ? 'border-t border-white/5' : ''} bg-accent/5`}>
           <div className="flex items-center gap-3">
             {isStreaming && (
               <div className="flex items-center gap-2">
-                <div className="relative">
-                  <div className="w-1.5 h-1.5 bg-accent rounded-full animate-ping absolute inset-0" />
-                  <div className="w-1.5 h-1.5 bg-accent rounded-full relative" />
-                </div>
+                <Loader2 className="w-3.5 h-3.5 text-accent animate-spin" />
                 <span className="text-[10px] font-medium text-accent uppercase tracking-wider animate-pulse">
-                  {streamingStatus}
+                  {streamingStatus || 'Processing...'}
                 </span>
               </div>
             )}
