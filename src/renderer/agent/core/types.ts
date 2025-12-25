@@ -320,7 +320,6 @@ export interface AgentConfig {
   maxHistoryMessages: number
   maxToolResultChars: number
   autoApprove: {
-    edits: boolean
     terminal: boolean
     dangerous: boolean
   }

@@ -48,4 +48,4 @@ export enum ContextItemType {
     Web = 'Web',
 }
 
-export type ToolApprovalType = 'terminal' | 'dangerous'
+// ToolApprovalType 已移至 types.ts

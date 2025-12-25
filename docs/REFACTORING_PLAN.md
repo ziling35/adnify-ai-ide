@@ -403,6 +403,17 @@ AgentService.ts (~1656 行) 拆分完成：
 - ✅ `src/renderer/agent/core/ElectronEnvironment.ts` - 未使用
 - ✅ `src/renderer/agent/core/interfaces.ts` - 未使用
 - ✅ `src/renderer/agent/core/ContextCompression.ts` - 未使用（与 ContextCompressor.ts 功能重复）
+- ✅ `src/renderer/agent/tools/schemas.ts` - 与 toolDefinitions.ts 重复
+
+**类型定义统一：**
+- ✅ 统一 `ToolStatus` 和 `ToolApprovalType` 类型定义
+- ✅ 移除 `toolTypes.ts` 中重复的类型定义，改为从 `core/types.ts` 重导出
+- ✅ 移除 `enums.ts` 中重复的 `ToolApprovalType`
+- ✅ 更新 `shared/types/index.ts` 移除已废弃的 `'edits'` 审批类型
+- ✅ 移除 `AgentConfig.autoApprove.edits`（文件编辑不需要确认）
+
+**保留但未使用的模块（未来功能）：**
+- `src/renderer/agent/codeApplyService.ts` - 代码块应用服务（未集成）
 
 ---
 
@@ -423,8 +434,9 @@ AgentService.ts (~1656 行) 拆分完成：
 | 原 AgentService.ts 行数 | 1656 → 705 |
 | TypeScript 错误修复 | 12 |
 | 删除冗余文件 | 1 |
-| 删除未使用模块 | 10 |
+| 删除未使用模块 | 11 |
 | 删除空目录 | 4 |
+| 类型定义统一 | 4 |
 
 ## 五、路径别名配置
 
