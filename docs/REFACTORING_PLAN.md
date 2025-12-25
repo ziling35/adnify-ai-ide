@@ -298,11 +298,30 @@ rules: {
 2. ✅ 自动添加 logger 导入（63 个文件）
 3. ✅ 根据文件路径自动推断日志分类
 
-### Phase 4: 组件拆分 (待进行)
-1. 拆分 Sidebar.tsx
-2. 拆分 SettingsModal.tsx
-3. 拆分 AgentService.ts
-4. 更新相关导入
+### Phase 4: 组件拆分 ✅ 已完成
+
+Sidebar.tsx 拆分完成：
+- ✅ 创建目录结构 `components/sidebar/`
+- ✅ 创建 `utils.ts` 工具函数
+- ✅ 创建 `components/InlineCreateInput.tsx`
+- ✅ 创建 `components/FileTreeItem.tsx`
+- ✅ 创建 `panels/ExplorerView.tsx` (262 行)
+- ✅ 创建 `panels/SearchView.tsx` (435 行)
+- ✅ 创建 `panels/GitView.tsx` (491 行)
+- ✅ 创建 `panels/ProblemsView.tsx` (186 行)
+- ✅ 创建 `panels/OutlineView.tsx` (170 行)
+- ✅ 创建 `panels/HistoryView.tsx`
+- ✅ 创建新的 `Sidebar.tsx` 主组件 (30 行)
+- ✅ 更新 `index.ts` 导出
+- ✅ 更新 `App.tsx` 导入路径
+- ✅ 删除旧的 `Sidebar.tsx` (1938 行)
+- ✅ 构建通过
+- ✅ 测试通过
+
+### Phase 5: 目录重组 (待进行)
+1. 拆分 SettingsModal.tsx (~1935 行)
+2. 拆分 AgentService.ts (~1656 行)
+3. 更新相关导入
 
 ### Phase 4: 目录重组 (2-3 天)
 1. 创建新目录结构
@@ -331,6 +350,8 @@ rules: {
 | 日志迁移文件 | 63 |
 | console 替换次数 | 277 |
 | 新增 logger 导入 | 63 |
+| Sidebar 拆分组件 | 10 |
+| 原 Sidebar.tsx 行数 | 1938 → 30 |
 
 ## 五、路径别名配置
 

@@ -88,7 +88,8 @@ class LoggerClass {
     consoleLogging: true,
   }
   private logs: LogEntry[] = []
-  private isMain = typeof window === 'undefined'
+  // 检测是否在主进程中运行（Node.js 环境没有 window 对象）
+  private isMain = typeof process !== 'undefined' && process.versions?.node && !(globalThis as Record<string, unknown>).window
 
   /**
    * 配置日志器
