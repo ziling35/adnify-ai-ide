@@ -2,33 +2,22 @@
  * 问题面板 - 显示所有诊断错误
  */
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useMemo } from 'react'
 import { ChevronRight, FileText, AlertCircle, AlertTriangle, Info } from 'lucide-react'
 import { useStore } from '@store'
 import { LspDiagnostic } from '@app-types/electron'
-import { onDiagnostics } from '@services/lspService'
+import { useDiagnosticsStore } from '@services/diagnosticsStore'
 
 export function ProblemsView() {
   const { openFile, setActiveFile, language } = useStore()
-  const [diagnostics, setDiagnostics] = useState<Map<string, LspDiagnostic[]>>(new Map())
+  
+  // 从全局 store 获取诊断数据
+  const diagnostics = useDiagnosticsStore(state => state.diagnostics)
+  const errorCount = useDiagnosticsStore(state => state.errorCount)
+  const warningCount = useDiagnosticsStore(state => state.warningCount)
+  
   const [expandedFiles, setExpandedFiles] = useState<Set<string>>(new Set())
   const [filter, setFilter] = useState<'all' | 'errors' | 'warnings'>('all')
-
-  // 监听 LSP 诊断
-  useEffect(() => {
-    const unsubscribe = onDiagnostics((uri, diags) => {
-      setDiagnostics((prev) => {
-        const next = new Map(prev)
-        if (diags.length === 0) {
-          next.delete(uri)
-        } else {
-          next.set(uri, diags)
-        }
-        return next
-      })
-    })
-    return unsubscribe
-  }, [])
 
   const toggleFile = (uri: string) => {
     setExpandedFiles((prev) => {
@@ -65,21 +54,6 @@ export function ProblemsView() {
     }
   }
 
-  // 统计
-  const stats = useMemo(() => {
-    let errors = 0,
-      warnings = 0,
-      infos = 0
-    diagnostics.forEach((diags) => {
-      diags.forEach((d) => {
-        if (d.severity === 1) errors++
-        else if (d.severity === 2) warnings++
-        else infos++
-      })
-    })
-    return { errors, warnings, infos, total: errors + warnings + infos }
-  }, [diagnostics])
-
   // 过滤后的诊断
   const filteredDiagnostics = useMemo(() => {
     const result = new Map<string, LspDiagnostic[]>()
@@ -107,14 +81,14 @@ export function ProblemsView() {
           {language === 'zh' ? '问题' : 'Problems'}
         </span>
         <div className="flex items-center gap-2 text-[10px]">
-          {stats.errors > 0 && (
+          {errorCount > 0 && (
             <span className="flex items-center gap-1 text-status-error">
-              <AlertCircle className="w-3 h-3" /> {stats.errors}
+              <AlertCircle className="w-3 h-3" /> {errorCount}
             </span>
           )}
-          {stats.warnings > 0 && (
+          {warningCount > 0 && (
             <span className="flex items-center gap-1 text-status-warning">
-              <AlertTriangle className="w-3 h-3" /> {stats.warnings}
+              <AlertTriangle className="w-3 h-3" /> {warningCount}
             </span>
           )}
         </div>

@@ -23,6 +23,7 @@ import AboutDialog from './components/dialogs/AboutDialog'
 import { adnifyDir } from './services/adnifyDirService'
 import { checkpointService } from '@renderer/agent/services/checkpointService'
 import { useAgentStore, initializeAgentStore } from '@renderer/agent/store/AgentStore'
+import { initDiagnosticsListener } from './services/diagnosticsStore'
 import { keybindingService } from './services/keybindingService'
 import { registerCoreCommands } from './config/commands'
 import { LAYOUT_LIMITS } from '@shared/constants'
@@ -130,6 +131,9 @@ function AppContent() {
 
             // 初始化检查点服务
             await checkpointService.init()
+
+            // 初始化诊断监听器
+            initDiagnosticsListener()
 
             // 重新加载 Agent Store（确保从 .adnify 读取最新数据）
             await useAgentStore.persist.rehydrate()

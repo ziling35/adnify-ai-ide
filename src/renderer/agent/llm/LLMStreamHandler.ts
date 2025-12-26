@@ -142,7 +142,7 @@ export function handleToolCallStart(
   const toolId = chunk.toolCallDelta.id || `tool_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`
   const toolName = chunk.toolCallDelta.name || 'unknown'
 
-  logger.agent.info(`%c[Agent] ✅ Tool call START: ${toolName} (${toolId})`, 'color: #00ff00; font-weight: bold')
+  logger.agent.debug(`%c[Agent] ✅ Tool call START: ${toolName} (${toolId})`, 'color: #00ff00; font-weight: bold')
 
   if (toolName !== 'unknown' && !isValidToolName(toolName)) {
     logger.agent.warn(`[Agent] Invalid tool name detected: ${toolName}`)
@@ -172,7 +172,7 @@ export function handleToolCallDelta(
   if (chunk.type !== 'tool_call_delta' || !chunk.toolCallDelta || !state.currentToolCall) return
 
   const store = useAgentStore.getState()
-  logger.agent.info(`%c[Agent] 📝 Tool call DELTA: +${chunk.toolCallDelta.args?.length || 0} chars`, 'color: #ffff00')
+  logger.agent.debug(`%c[Agent] 📝 Tool call DELTA: +${chunk.toolCallDelta.args?.length || 0} chars`, 'color: #ffff00')
 
   if (chunk.toolCallDelta.name) {
     const newName = chunk.toolCallDelta.name
@@ -215,7 +215,7 @@ export function handleToolCallEnd(
   if (chunk.type !== 'tool_call_end' || !state.currentToolCall) return
 
   const store = useAgentStore.getState()
-  logger.agent.info(
+  logger.agent.debug(
     `%c[Agent] 🏁 Tool call END: ${state.currentToolCall.name} (total args: ${state.currentToolCall.argsString.length} chars)`,
     'color: #ff6600; font-weight: bold'
   )
@@ -255,7 +255,7 @@ export function handleFullToolCall(
   if (chunk.type !== 'tool_call' || !chunk.toolCall) return
 
   const store = useAgentStore.getState()
-  logger.agent.info(`%c[Agent] ⚡ FULL tool call (non-streaming): ${chunk.toolCall.name}`, 'color: #ff0000; font-weight: bold')
+  logger.agent.debug(`%c[Agent] ⚡ FULL tool call (non-streaming): ${chunk.toolCall.name}`, 'color: #ff0000; font-weight: bold')
 
   if (!isValidToolName(chunk.toolCall.name)) return
   if (state.toolCalls.find(tc => tc.id === chunk.toolCall!.id)) return
@@ -431,6 +431,6 @@ export function detectStreamingXMLToolCalls(
       status: 'pending',
     })
 
-    logger.agent.info(`[XMLStreamParser] Tool call completed early: ${lastFunc.name} (${streamingId})`)
+    logger.agent.debug(`[XMLStreamParser] Tool call completed early: ${lastFunc.name} (${streamingId})`)
   }
 }

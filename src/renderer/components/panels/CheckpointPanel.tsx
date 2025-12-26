@@ -1,20 +1,18 @@
 /**
  * 检查点面板
  * 显示检查点历史，支持回滚操作
+ * 
+ * 数据来源：AgentStore.messageCheckpoints（消息级别的检查点）
  */
 
 import { useState, useCallback, memo } from 'react'
-import { History, RotateCcw, ChevronDown, ChevronUp, FileText, MessageSquare, Wrench, X } from 'lucide-react'
-import { useStore } from '@/renderer/store'
+import { History, RotateCcw, ChevronDown, ChevronUp, FileText, MessageSquare, X } from 'lucide-react'
 import { useAgentStore } from '@/renderer/agent/store/AgentStore'
-import { checkpointService } from '@/renderer/agent/services/checkpointService'
-import { Checkpoint } from '@/renderer/agent/types'
+import { MessageCheckpoint } from '@/renderer/agent/types'
 import { getFileName } from '@/renderer/utils/pathUtils'
 
-
-
 interface CheckpointItemProps {
-  checkpoint: Checkpoint
+  checkpoint: MessageCheckpoint
   isCurrent: boolean
   onRollback: () => void
 }
@@ -25,14 +23,12 @@ const CheckpointItem = memo(function CheckpointItem({
   onRollback,
 }: CheckpointItemProps) {
   const [expanded, setExpanded] = useState(false)
-  const fileCount = Object.keys(checkpoint.snapshots).length
+  const fileCount = Object.keys(checkpoint.fileSnapshots).length
 
   const formatTime = (timestamp: number) => {
     const date = new Date(timestamp)
     return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
   }
-
-  const TypeIcon = checkpoint.type === 'user_message' ? MessageSquare : Wrench
 
   return (
     <div
@@ -48,7 +44,7 @@ const CheckpointItem = memo(function CheckpointItem({
         className="flex items-center gap-2 px-3 py-2 cursor-pointer"
         onClick={() => setExpanded(!expanded)}
       >
-        <TypeIcon className={`w-4 h-4 ${isCurrent ? 'text-editor-accent' : 'text-editor-text-muted'}`} />
+        <MessageSquare className={`w-4 h-4 ${isCurrent ? 'text-editor-accent' : 'text-editor-text-muted'}`} />
         <div className="flex-1 min-w-0">
           <div className="text-sm text-editor-text truncate">
             {checkpoint.description}
@@ -85,7 +81,7 @@ const CheckpointItem = memo(function CheckpointItem({
         <div className="px-3 pb-2 border-t border-editor-border/50">
           <div className="text-xs text-editor-text-muted mt-2 mb-1">Saved files:</div>
           <div className="space-y-1">
-            {Object.keys(checkpoint.snapshots).map((path) => (
+            {Object.keys(checkpoint.fileSnapshots).map((path) => (
               <div
                 key={path}
                 className="flex items-center gap-2 text-xs text-editor-text"
@@ -106,38 +102,35 @@ interface CheckpointPanelProps {
 }
 
 export default function CheckpointPanel({ onClose }: CheckpointPanelProps) {
-  const { checkpoints, currentCheckpointIdx, setCurrentCheckpointIdx } = useStore()
+  // 直接从 AgentStore 获取检查点数据
+  const messageCheckpoints = useAgentStore(state => state.messageCheckpoints)
+  const restoreToCheckpoint = useAgentStore(state => state.restoreToCheckpoint)
   const addAssistantMessage = useAgentStore(state => state.addAssistantMessage)
   const appendToAssistant = useAgentStore(state => state.appendToAssistant)
   const finalizeAssistant = useAgentStore(state => state.finalizeAssistant)
+  
   const [isRollingBack, setIsRollingBack] = useState(false)
 
   // 辅助函数：添加完整的助手消息
-  const showMessage = (text: string) => {
+  const showMessage = useCallback((text: string) => {
     const id = addAssistantMessage()
     if (id) {
       appendToAssistant(id, text)
       finalizeAssistant(id)
     }
-  }
+  }, [addAssistantMessage, appendToAssistant, finalizeAssistant])
 
-  const handleRollback = useCallback(async (checkpoint: Checkpoint) => {
+  const handleRollback = useCallback(async (checkpoint: MessageCheckpoint) => {
     if (isRollingBack) return
 
     setIsRollingBack(true)
     try {
-      const result = await checkpointService.rollbackTo(checkpoint.id)
+      const result = await restoreToCheckpoint(checkpoint.id)
 
       if (result.success) {
         showMessage(
           `✅ Rolled back to checkpoint: "${checkpoint.description}"\nRestored ${result.restoredFiles.length} file(s).`
         )
-
-        // 更新当前检查点索引
-        const idx = checkpoints.findIndex(c => c.id === checkpoint.id)
-        if (idx !== -1) {
-          setCurrentCheckpointIdx(idx)
-        }
       } else {
         showMessage(
           `⚠️ Rollback completed with errors:\n${result.errors.join('\n')}`
@@ -151,17 +144,20 @@ export default function CheckpointPanel({ onClose }: CheckpointPanelProps) {
     } finally {
       setIsRollingBack(false)
     }
-  }, [isRollingBack, checkpoints, addAssistantMessage, setCurrentCheckpointIdx])
+  }, [isRollingBack, restoreToCheckpoint, showMessage])
 
-  if (checkpoints.length === 0) {
+  if (messageCheckpoints.length === 0) {
     return (
       <div className="p-4 text-center text-editor-text-muted">
         <History className="w-8 h-8 mx-auto mb-2 opacity-50" />
         <p className="text-sm">No checkpoints yet</p>
-        <p className="text-xs mt-1">Checkpoints are created automatically when you send messages or edit files.</p>
+        <p className="text-xs mt-1">Checkpoints are created automatically when you send messages.</p>
       </div>
     )
   }
+
+  // 最新的检查点是当前检查点
+  const currentCheckpointId = messageCheckpoints[messageCheckpoints.length - 1]?.id
 
   return (
     <div className="flex flex-col h-full">
@@ -173,7 +169,7 @@ export default function CheckpointPanel({ onClose }: CheckpointPanelProps) {
             Checkpoints
           </span>
           <span className="text-xs text-editor-text-muted">
-            ({checkpoints.length})
+            ({messageCheckpoints.length})
           </span>
         </div>
         {onClose && (
@@ -188,17 +184,14 @@ export default function CheckpointPanel({ onClose }: CheckpointPanelProps) {
 
       {/* List */}
       <div className="flex-1 overflow-auto p-2 space-y-2">
-        {[...checkpoints].reverse().map((checkpoint, idx) => {
-          const actualIdx = checkpoints.length - 1 - idx
-          return (
-            <CheckpointItem
-              key={checkpoint.id}
-              checkpoint={checkpoint}
-              isCurrent={actualIdx === currentCheckpointIdx}
-              onRollback={() => handleRollback(checkpoint)}
-            />
-          )
-        })}
+        {[...messageCheckpoints].reverse().map((checkpoint) => (
+          <CheckpointItem
+            key={checkpoint.id}
+            checkpoint={checkpoint}
+            isCurrent={checkpoint.id === currentCheckpointId}
+            onRollback={() => handleRollback(checkpoint)}
+          />
+        ))}
       </div>
 
       {/* Footer */}

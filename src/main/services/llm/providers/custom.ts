@@ -157,9 +157,13 @@ export class CustomProvider extends BaseProvider {
             body.top_p = topP
         }
 
-        // 4. 确保 stream 存在
+        // 4. 确保 stream 存在，并请求 usage 信息
         if (!('stream' in body)) {
             body.stream = true
+        }
+        // 请求返回 usage 信息（OpenAI 兼容 API）
+        if (!('stream_options' in body)) {
+            body.stream_options = { include_usage: true }
         }
 
         return { url, method: requestConfig.method, headers, body }
@@ -263,6 +267,7 @@ export class CustomProvider extends BaseProvider {
         let fullContent = ''
         let fullReasoning = ''
         const toolCalls: Map<number, ToolCallWithBuffer> = new Map()
+        let usage: { promptTokens: number; completionTokens: number; totalTokens: number } | undefined
 
         const doneMarker = responseConfig.doneMarker || '[DONE]'
         const contentField = responseConfig.contentField || 'delta.content'
@@ -303,6 +308,16 @@ export class CustomProvider extends BaseProvider {
                         parsed = JSON.parse(data)
                     } catch {
                         continue
+                    }
+
+                    // 提取 usage 信息（通常在最后一个 chunk 中）
+                    if (parsed.usage) {
+                        const u = parsed.usage
+                        usage = {
+                            promptTokens: u.prompt_tokens || u.promptTokens || 0,
+                            completionTokens: u.completion_tokens || u.completionTokens || 0,
+                            totalTokens: u.total_tokens || u.totalTokens || 0,
+                        }
                     }
 
                     const choices = parsed.choices
@@ -392,11 +407,12 @@ export class CustomProvider extends BaseProvider {
                 }
             }
 
-            // 完成回调
+            // 完成回调（包含 usage 信息）
             onComplete?.({
                 content: fullContent,
                 reasoning: fullReasoning || undefined,
                 toolCalls: finalToolCalls.length > 0 ? finalToolCalls : undefined,
+                usage,
             })
         } finally {
             reader.releaseLock()

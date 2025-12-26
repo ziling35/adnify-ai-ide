@@ -56,7 +56,7 @@ function findModulePath(moduleName: string, subPath: string): string | null {
 function getTypeScriptServerCommand(): { command: string; args: string[] } | null {
   const serverPath = findModulePath('typescript-language-server', 'lib/cli.mjs')
     || findModulePath('typescript-language-server', 'lib/cli.js')
-  logger.lsp.info('[LSP Manager] TypeScript server path:', serverPath)
+  logger.lsp.debug('[LSP Manager] TypeScript server path:', serverPath)
   // 使用 process.execPath 配合 ELECTRON_RUN_AS_NODE=1 环境变量
   if (serverPath) return { command: process.execPath, args: [serverPath, '--stdio'] }
   return null
@@ -211,7 +211,7 @@ class LspManager {
 
     this.servers.set(key, instance)
 
-    logger.lsp.info(`[LSP ${key}] Starting process: ${command} ${args.join(' ')}`)
+    logger.lsp.debug(`[LSP ${key}] Starting process: ${command} ${args.join(' ')}`)
 
     proc.on('error', (err) => {
       logger.lsp.error(`[LSP ${key}] Process spawn error:`, err.message)
@@ -224,7 +224,7 @@ class LspManager {
     })
 
     proc.on('close', (code) => {
-      logger.lsp.info(`[LSP ${key}] Closed with code: ${code}`)
+      logger.lsp.debug(`[LSP ${key}] Closed with code: ${code}`)
       const inst = this.servers.get(key)
       this.servers.delete(key)
 
@@ -254,7 +254,7 @@ class LspManager {
     try {
       await this.initializeServer(key, workspacePath)
       instance.initialized = true
-      logger.lsp.info(`[LSP ${key}] Initialized successfully`)
+      logger.lsp.debug(`[LSP ${key}] Initialized successfully`)
       return true
     } catch (error: any) {
       logger.lsp.error(`[LSP ${key}] Init failed:`, error.message)
@@ -317,6 +317,11 @@ class LspManager {
       const { uri, diagnostics } = message.params
       this.diagnosticsCache.set(uri, diagnostics)
 
+      // 只在有诊断信息时记录日志
+      if (diagnostics.length > 0) {
+        logger.lsp.debug(`[LSP ${key}] Diagnostics: ${uri} (${diagnostics.length} items)`)
+      }
+
       BrowserWindow.getAllWindows().forEach((win) => {
         if (!win.isDestroyed()) {
           try {
@@ -325,6 +330,7 @@ class LspManager {
         }
       })
     }
+    // 忽略其他通知类型的日志，太频繁了
   }
 
   sendRequest(key: string, method: string, params: any, timeoutMs = 30000): Promise<any> {

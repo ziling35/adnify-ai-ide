@@ -10,14 +10,27 @@ import ToolCallLogContent from '../panels/ToolCallLogContent'
 import { PlanListPopover } from '../panels/PlanListContent'
 import { useAgentStore, selectMessages } from '@renderer/agent/store/AgentStore'
 import { isAssistantMessage, TokenUsage } from '@renderer/agent/types'
+import { useDiagnosticsStore, getFileStats } from '@services/diagnosticsStore'
 
 export default function StatusBar() {
   const {
     activeFilePath, isStreaming, workspacePath, setShowSettings, language,
-    terminalVisible, setTerminalVisible, cursorPosition, isGitRepo, gitStatus
+    terminalVisible, setTerminalVisible, cursorPosition, isGitRepo, gitStatus,
+    setActiveSidePanel
   } = useStore()
   const [indexStatus, setIndexStatus] = useState<IndexStatus | null>(null)
   const [workerProgress, setWorkerProgress] = useState<IndexProgress | null>(null)
+  
+  // 从全局 store 获取诊断统计
+  const diagnostics = useDiagnosticsStore(state => state.diagnostics)
+  const version = useDiagnosticsStore(state => state.version)
+  const totalErrorCount = useDiagnosticsStore(state => state.errorCount)
+  const totalWarningCount = useDiagnosticsStore(state => state.warningCount)
+
+  // 当前文件的诊断统计（依赖 version 触发更新）
+  const currentFileStats = useMemo(() => {
+    return getFileStats(diagnostics, activeFilePath)
+  }, [activeFilePath, version, diagnostics])
 
   // 获取消息列表并计算 token 统计
   const messages = useAgentStore(selectMessages)
@@ -71,6 +84,10 @@ export default function StatusBar() {
     setShowSettings(true)
   }
 
+  const handleDiagnosticsClick = () => {
+    setActiveSidePanel('problems')
+  }
+
   const toolCallLogs = useStore(state => state.toolCallLogs)
 
   return (
@@ -83,17 +100,23 @@ export default function StatusBar() {
           </button>
         )}
 
-        {/* Diagnostics */}
-        <div className="flex items-center gap-3">
-          <div className="flex items-center gap-1 hover:text-text-primary transition-colors cursor-pointer group">
-            <XCircle className="w-3 h-3 group-hover:text-red-400 transition-colors" />
-            <span>0</span>
+        {/* Diagnostics - 显示当前文件的错误/警告，tooltip 显示全局统计 */}
+        <button 
+          onClick={handleDiagnosticsClick}
+          className="flex items-center gap-3 hover:text-text-primary transition-colors"
+          title={language === 'zh' 
+            ? `当前文件: ${currentFileStats.errors} 错误, ${currentFileStats.warnings} 警告\n全部: ${totalErrorCount} 错误, ${totalWarningCount} 警告`
+            : `Current file: ${currentFileStats.errors} errors, ${currentFileStats.warnings} warnings\nTotal: ${totalErrorCount} errors, ${totalWarningCount} warnings`}
+        >
+          <div className={`flex items-center gap-1 ${currentFileStats.errors > 0 ? 'text-red-400' : ''}`}>
+            <XCircle className="w-3 h-3" />
+            <span>{currentFileStats.errors}</span>
           </div>
-          <div className="flex items-center gap-1 hover:text-text-primary transition-colors cursor-pointer group">
-            <AlertCircle className="w-3 h-3 group-hover:text-yellow-400 transition-colors" />
-            <span>0</span>
+          <div className={`flex items-center gap-1 ${currentFileStats.warnings > 0 ? 'text-yellow-400' : ''}`}>
+            <AlertCircle className="w-3 h-3" />
+            <span>{currentFileStats.warnings}</span>
           </div>
-        </div>
+        </button>
 
         {/* Worker 状态 */}
         {workerProgress && !workerProgress.isComplete && (
