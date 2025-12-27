@@ -11,7 +11,7 @@
 // ============================================
 
 /** 认证类型 */
-export type AuthType = 'bearer' | 'header' | 'query' | 'none'
+export type AuthType = 'bearer' | 'api-key' | 'header' | 'query' | 'none'
 
 /** 认证配置 */
 export interface AuthConfig {

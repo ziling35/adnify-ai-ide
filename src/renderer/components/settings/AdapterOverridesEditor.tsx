@@ -1,11 +1,11 @@
 import { useState, useEffect } from 'react'
 import { ChevronDown, ChevronRight, Code2, FileJson, RotateCcw, AlertTriangle } from 'lucide-react'
 import { Button, Input, Select } from '@components/ui'
-import type { AdapterOverrides, LLMAdapterConfig } from '@/shared/config/providers'
+import type { AdvancedConfig, LLMAdapterConfig } from '@/shared/config/providers'
 
 interface AdapterOverridesEditorProps {
-    overrides?: AdapterOverrides
-    onChange: (overrides: AdapterOverrides | undefined) => void
+    overrides?: AdvancedConfig
+    onChange: (overrides: AdvancedConfig | undefined) => void
     language: 'en' | 'zh'
     defaultEndpoint?: string
     /** 默认的适配器配置，用于显示 placeholder */
@@ -56,8 +56,8 @@ export function AdapterOverridesEditor({
         }
     }, [overrides?.request?.bodyTemplate, defaultConfig])
 
-    const updateRequest = (updates: NonNullable<AdapterOverrides['request']>) => {
-        const newOverrides: AdapterOverrides = {
+    const updateRequest = (updates: NonNullable<AdvancedConfig['request']>) => {
+        const newOverrides: AdvancedConfig = {
             ...overrides,
             request: {
                 ...overrides?.request,
@@ -69,8 +69,8 @@ export function AdapterOverridesEditor({
         onChange(newOverrides)
     }
 
-    const updateResponse = (updates: NonNullable<AdapterOverrides['response']>) => {
-        const newOverrides: AdapterOverrides = {
+    const updateResponse = (updates: NonNullable<AdvancedConfig['response']>) => {
+        const newOverrides: AdvancedConfig = {
             ...overrides,
             response: {
                 ...overrides?.response,
@@ -81,8 +81,8 @@ export function AdapterOverridesEditor({
         onChange(newOverrides)
     }
 
-    const updateAuth = (updates: Partial<NonNullable<AdapterOverrides['auth']>>) => {
-        const newOverrides: AdapterOverrides = {
+    const updateAuth = (updates: Partial<NonNullable<AdvancedConfig['auth']>>) => {
+        const newOverrides: AdvancedConfig = {
             ...overrides,
             auth: {
                 ...overrides?.auth,

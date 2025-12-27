@@ -1,15 +1,13 @@
 /**
  * 设置相关状态切片
  * 统一管理所有应用设置
- * 
- * 注意：类型定义和默认值从 settingsService 导入
  */
 import { logger } from '@utils/Logger'
 import { StateCreator } from 'zustand'
 import { SECURITY_DEFAULTS, AGENT_DEFAULTS } from '@/shared/constants'
 import { saveEditorConfig, getEditorConfig, defaultEditorConfig } from '@renderer/config/editorConfig'
 import { ProviderModelConfig } from '@app-types/provider'
-import { PROVIDERS, getAdapterConfig, type ProviderType as UnifiedProviderType } from '@/shared/config/providers'
+import { BUILTIN_PROVIDERS, getAdapterConfig } from '@/shared/config/providers'
 import {
   settingsService,
   type LLMConfig as ServiceLLMConfig,
@@ -23,16 +21,15 @@ import {
 
 // ============ 导出类型 ============
 
-export type ProviderType = UnifiedProviderType
+export type ProviderType = string
 
-// 重新导出 settingsService 的类型
 export type { LLMParameters }
 
-// LLMConfig 扩展 ServiceLLMConfig，确保 provider 类型更精确
-export interface LLMConfig extends Omit<ServiceLLMConfig, 'provider'> {
-  provider: ProviderType
-  parameters: LLMParameters  // 确保 parameters 是必需的
+// LLMConfig 扩展 ServiceLLMConfig
+export interface LLMConfig extends ServiceLLMConfig {
+  parameters: LLMParameters
 }
+
 
 export type AutoApproveSettings = ServiceAutoApprove
 
@@ -85,7 +82,6 @@ const defaultLLMConfig: LLMConfig = {
   ...serviceDefaultLLMConfig,
   provider: 'openai',
   parameters: serviceDefaultLLMConfig.parameters!,
-  adapterId: 'openai',
   adapterConfig: getAdapterConfig('openai'),
 }
 
@@ -94,13 +90,12 @@ const defaultAutoApprove = serviceDefaultAutoApprove
 // 从统一配置生成默认 Provider 配置
 function generateDefaultProviderConfigs(): Record<string, ProviderModelConfig> {
   const configs: Record<string, ProviderModelConfig> = {}
-  for (const [id, provider] of Object.entries(PROVIDERS)) {
+  for (const [id, provider] of Object.entries(BUILTIN_PROVIDERS)) {
     configs[id] = {
       customModels: [],
-      adapterId: provider.adapter.id,
       adapterConfig: provider.adapter,
-      model: provider.models.recommended || provider.models.default[0] || '',
-      baseUrl: provider.endpoint.default,
+      model: provider.recommendedModel || provider.defaultModels[0] || '',
+      baseUrl: provider.defaultBaseUrl,
     }
   }
   return configs
@@ -213,12 +208,10 @@ export const createSettingsSlice: StateCreator<SettingsSlice, [], [], SettingsSl
   loadSettings: async (isEmptyWindow = false) => {
     try {
       // 使用统一的 settingsService 加载设置
-      // settingsService 已经处理了从 providerConfigs 获取完整配置的逻辑
       const settings = await settingsService.loadAll()
 
       logger.settings.info('[SettingsSlice] loadSettings via settingsService:', {
         hasAdapterConfig: !!settings.llmConfig.adapterConfig,
-        adapterId: settings.llmConfig.adapterId,
         provider: settings.llmConfig.provider,
       })
 

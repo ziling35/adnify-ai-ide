@@ -67,7 +67,6 @@ export interface ProviderAdapterConfig {
     name: string
     description?: string
     extendsFrom?: 'openai' | 'anthropic' | 'gemini'
-    isBuiltin?: boolean
     toolFormat: ToolFormatConfig
     responseParse: ResponseParseConfig
     messageFormat: MessageFormatConfig
@@ -94,7 +93,6 @@ const BUILTIN_ADAPTERS: Record<BuiltinAdapterId, ProviderAdapterConfig> = {
         id: 'openai',
         name: 'OpenAI',
         description: 'OpenAI GPT models (standard format)',
-        isBuiltin: true,
         toolFormat: {
             wrapMode: 'function',
             wrapField: 'function',
@@ -122,7 +120,6 @@ const BUILTIN_ADAPTERS: Record<BuiltinAdapterId, ProviderAdapterConfig> = {
         id: 'anthropic',
         name: 'Anthropic',
         description: 'Claude models with tool_use content blocks',
-        isBuiltin: true,
         toolFormat: {
             wrapMode: 'none',
             parameterField: 'input_schema',
@@ -151,7 +148,6 @@ const BUILTIN_ADAPTERS: Record<BuiltinAdapterId, ProviderAdapterConfig> = {
         name: '千问 Qwen',
         description: 'Alibaba Qwen models',
         extendsFrom: 'openai',
-        isBuiltin: true,
         toolFormat: {
             wrapMode: 'function',
             wrapField: 'function',
@@ -180,7 +176,6 @@ const BUILTIN_ADAPTERS: Record<BuiltinAdapterId, ProviderAdapterConfig> = {
         name: '智谱 GLM',
         description: 'Zhipu GLM-4 models',
         extendsFrom: 'openai',
-        isBuiltin: true,
         toolFormat: {
             wrapMode: 'function',
             wrapField: 'function',
@@ -209,7 +204,6 @@ const BUILTIN_ADAPTERS: Record<BuiltinAdapterId, ProviderAdapterConfig> = {
         name: 'DeepSeek',
         description: 'DeepSeek models (OpenAI compatible, supports reasoning)',
         extendsFrom: 'openai',
-        isBuiltin: true,
         toolFormat: {
             wrapMode: 'function',
             wrapField: 'function',
@@ -248,7 +242,6 @@ const BUILTIN_ADAPTERS: Record<BuiltinAdapterId, ProviderAdapterConfig> = {
         id: 'xml-generic',
         name: 'XML Format',
         description: 'Models using XML tool call format (Llama, etc.)',
-        isBuiltin: true,
         toolFormat: {
             wrapMode: 'function',
             wrapField: 'function',
@@ -278,7 +271,6 @@ const BUILTIN_ADAPTERS: Record<BuiltinAdapterId, ProviderAdapterConfig> = {
         id: 'mixed',
         name: 'Mixed Format',
         description: 'Try JSON first, fallback to XML parsing',
-        isBuiltin: true,
         toolFormat: {
             wrapMode: 'function',
             wrapField: 'function',

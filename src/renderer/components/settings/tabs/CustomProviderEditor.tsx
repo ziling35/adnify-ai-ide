@@ -11,7 +11,7 @@ import { ChevronDown, ChevronUp, Plus, Trash, Zap, X, Save, Code2 } from 'lucide
 import { Button, Input, Select } from '@components/ui'
 import { useStore } from '@store'
 import type { CustomProviderConfig, ProviderMode, CustomModeConfig } from '@shared/types/customProvider'
-import type { AdapterOverrides } from '@/shared/config/providers'
+import type { AdvancedConfig } from '@/shared/config/providers'
 import { VENDOR_PRESETS, validateCustomProviderConfig } from '@shared/types/customProviderPresets'
 import { toast } from '@components/common/ToastProvider'
 import { AdapterOverridesEditor } from '../AdapterOverridesEditor'
@@ -50,7 +50,7 @@ export function InlineProviderEditor({ provider, language, onSave, onCancel, isN
     const [selectedPreset, setSelectedPreset] = useState('')
 
     // 自定义模式配置
-    const [adapterOverrides, setAdapterOverrides] = useState<AdapterOverrides | undefined>(undefined)
+    const [advancedConfig, setAdvancedConfig] = useState<AdvancedConfig | undefined>(undefined)
     const [showCustomConfig, setShowCustomConfig] = useState(false)
 
     // 从厂商预设加载
@@ -68,7 +68,7 @@ export function InlineProviderEditor({ provider, language, onSave, onCancel, isN
 
             if (preset.customConfig) {
                 const cfg = preset.customConfig
-                setAdapterOverrides({
+                setAdvancedConfig({
                     request: { endpoint: cfg.request.endpoint, bodyTemplate: cfg.request.bodyTemplate },
                     response: {
                         contentField: cfg.response.streaming.contentField,
@@ -92,32 +92,32 @@ export function InlineProviderEditor({ provider, language, onSave, onCancel, isN
     // 构建 customConfig
     const buildCustomConfig = (): CustomModeConfig | undefined => {
         if (mode !== 'custom') return undefined
-        if (!adapterOverrides) return undefined
+        if (!advancedConfig) return undefined
 
         return {
             request: {
-                endpoint: adapterOverrides.request?.endpoint || '/chat/completions',
+                endpoint: advancedConfig.request?.endpoint || '/chat/completions',
                 method: 'POST',
-                bodyTemplate: adapterOverrides.request?.bodyTemplate || {
+                bodyTemplate: advancedConfig.request?.bodyTemplate || {
                     model: '{{model}}',
                     messages: '{{messages}}',
                     stream: true,
                 },
             },
             response: {
-                sseConfig: { dataPrefix: 'data: ', doneMarker: adapterOverrides.response?.doneMarker || '[DONE]' },
+                sseConfig: { dataPrefix: 'data: ', doneMarker: advancedConfig.response?.doneMarker || '[DONE]' },
                 streaming: {
-                    contentField: adapterOverrides.response?.contentField || 'delta.content',
-                    reasoningField: adapterOverrides.response?.reasoningField,
-                    toolCallsField: adapterOverrides.response?.toolCallField,
+                    contentField: advancedConfig.response?.contentField || 'delta.content',
+                    reasoningField: advancedConfig.response?.reasoningField,
+                    toolCallsField: advancedConfig.response?.toolCallField,
                     toolNameField: 'function.name',
                     toolArgsField: 'function.arguments',
                     toolIdField: 'id',
                     finishReasonField: 'finish_reason',
                 },
-                toolCall: { mode: 'streaming', argsIsObject: adapterOverrides.response?.argsIsObject || false },
+                toolCall: { mode: 'streaming' },
             },
-            auth: { type: adapterOverrides.auth?.type || 'bearer', headerName: adapterOverrides.auth?.headerName },
+            auth: { type: advancedConfig.auth?.type || 'bearer', headerName: advancedConfig.auth?.headerName },
         }
     }
 
@@ -250,7 +250,7 @@ export function InlineProviderEditor({ provider, language, onSave, onCancel, isN
                     </button>
                     {showCustomConfig && (
                         <div className="p-4 bg-surface/30">
-                            <AdapterOverridesEditor overrides={adapterOverrides} onChange={setAdapterOverrides} language={language} defaultEndpoint="/chat/completions" />
+                            <AdapterOverridesEditor overrides={advancedConfig} onChange={setAdvancedConfig} language={language} defaultEndpoint="/chat/completions" />
                         </div>
                     )}
                 </div>

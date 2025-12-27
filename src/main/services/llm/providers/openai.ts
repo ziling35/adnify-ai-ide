@@ -15,7 +15,6 @@ export class OpenAIProvider extends BaseProvider {
   constructor(apiKey: string, baseUrl?: string, timeout?: number) {
     super('OpenAI')
     const timeoutMs = timeout || AGENT_DEFAULTS.DEFAULT_LLM_TIMEOUT
-    this.log('info', 'Initializing', { baseUrl: baseUrl || 'default', timeout: timeoutMs })
     this.client = new OpenAI({
       apiKey,
       baseURL: baseUrl,
@@ -55,6 +54,8 @@ export class OpenAIProvider extends BaseProvider {
       tools,
       systemPrompt,
       maxTokens,
+      temperature,
+      topP,
       signal,
       adapterConfig,
       onStream,
@@ -64,7 +65,7 @@ export class OpenAIProvider extends BaseProvider {
     } = params
 
     try {
-      this.log('info', 'Starting chat', { model, messageCount: messages.length })
+      this.log('info', 'Chat', { model, messageCount: messages.length })
 
       const openaiMessages: OpenAI.ChatCompletionMessageParam[] = []
 
@@ -126,6 +127,14 @@ export class OpenAIProvider extends BaseProvider {
         stream: true,
         stream_options: { include_usage: true }, // 请求返回 usage 信息
         max_tokens: maxTokens || AGENT_DEFAULTS.DEFAULT_MAX_TOKENS,
+      }
+
+      // 添加 LLM 参数
+      if (temperature !== undefined) {
+        requestBody.temperature = temperature
+      }
+      if (topP !== undefined) {
+        requestBody.top_p = topP
       }
 
       if (convertedTools && convertedTools.length > 0) {
@@ -257,11 +266,6 @@ export class OpenAIProvider extends BaseProvider {
       }
 
       const finalContent = fullContent || (fullReasoning ? `[Reasoning]\n${fullReasoning}` : '')
-      this.log('info', 'Chat complete', {
-        contentLength: fullContent.length,
-        toolCallCount: toolCalls.length,
-        usage,
-      })
 
       onComplete({
         content: finalContent,

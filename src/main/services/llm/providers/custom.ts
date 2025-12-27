@@ -41,14 +41,13 @@ export class CustomProvider extends BaseProvider {
         this.apiKey = apiKey
         this.baseUrl = baseUrl
         this.timeout = timeout || AGENT_DEFAULTS.DEFAULT_LLM_TIMEOUT
-        this.log('info', 'Initialized', { baseUrl, adapterId: adapterConfig.id })
     }
 
     async chat(params: ChatParams): Promise<void> {
         const { model, messages, tools, systemPrompt, maxTokens, temperature, topP, signal, onStream, onToolCall, onComplete, onError } = params
 
         try {
-            this.log('info', 'Starting chat', { model, messageCount: messages.length })
+            this.log('info', 'Chat', { model, messageCount: messages.length })
 
             const { request, response } = this.adapterConfig
 
@@ -63,8 +62,6 @@ export class CustomProvider extends BaseProvider {
                 temperature,
                 topP,
             })
-
-            this.log('info', 'Request built', { url: requestData.url })
 
             // 2. 发送请求
             const controller = new AbortController()

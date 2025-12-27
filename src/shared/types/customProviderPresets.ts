@@ -20,12 +20,10 @@ import type { LLMAdapterConfig } from '@/shared/config/providers'
 
 /** OpenAI 兼容适配器配置 */
 export const OPENAI_ADAPTER_PRESET: Omit<LLMAdapterConfig, 'id' | 'name'> = {
-    isBuiltin: false,
     request: {
         endpoint: '/chat/completions',
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        // bodyTemplate 只放结构性配置，核心字段由系统自动填充
         bodyTemplate: {
             stream: true,
         },
@@ -70,7 +68,6 @@ export const ZHIPU_ADAPTER_PRESET: Omit<LLMAdapterConfig, 'id' | 'name'> = {
 
 /** Anthropic 适配器配置 (支持 Extended Thinking) */
 export const ANTHROPIC_ADAPTER_PRESET: Omit<LLMAdapterConfig, 'id' | 'name'> = {
-    isBuiltin: false,
     request: {
         endpoint: '/messages',
         method: 'POST',

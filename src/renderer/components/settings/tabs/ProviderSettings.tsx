@@ -17,7 +17,7 @@ import { ProviderSettingsProps } from '../types'
 import { InlineProviderEditor } from './CustomProviderEditor'
 import { AdapterOverridesEditor } from '../AdapterOverridesEditor'
 import type { CustomProviderConfig } from '@shared/types/customProvider'
-import type { LLMAdapterConfig, AdapterOverrides } from '@/shared/config/providers'
+import type { LLMAdapterConfig, AdvancedConfig } from '@/shared/config/providers'
 
 // 内置厂商 ID
 const BUILTIN_PROVIDER_IDS = ['openai', 'anthropic', 'gemini']
@@ -31,7 +31,6 @@ function convertCustomConfigToAdapterConfig(custom: CustomProviderConfig): LLMAd
         id: custom.id,
         name: custom.name,
         description: custom.description || '自定义适配器',
-        isBuiltin: false,
         request: {
             endpoint: cfg.request.endpoint,
             method: cfg.request.method,
@@ -53,13 +52,10 @@ function convertCustomConfigToAdapterConfig(custom: CustomProviderConfig): LLMAd
 }
 
 /**
- * 将 LLMAdapterConfig 转换为 AdapterOverrides（用于回显）
- * 对于自定义 Provider，返回完整配置用于回显
- * 对于内置 Provider，返回 undefined（使用 defaultConfig 显示）
+ * 将 LLMAdapterConfig 转换为 AdvancedConfig（用于回显）
  */
-function adapterConfigToOverrides(config: LLMAdapterConfig | undefined, isCustom: boolean): AdapterOverrides | undefined {
+function adapterConfigToAdvanced(config: LLMAdapterConfig | undefined, isCustom: boolean): AdvancedConfig | undefined {
     if (!config) return undefined
-    // 内置 Provider 不需要转换，直接用 defaultConfig 显示
     if (!isCustom) return undefined
     return {
         request: {
@@ -70,9 +66,6 @@ function adapterConfigToOverrides(config: LLMAdapterConfig | undefined, isCustom
             contentField: config.response?.contentField,
             reasoningField: config.response?.reasoningField,
             toolCallField: config.response?.toolCallField,
-            toolNamePath: config.response?.toolNamePath,
-            toolArgsPath: config.response?.toolArgsPath,
-            argsIsObject: config.response?.argsIsObject,
             doneMarker: config.response?.doneMarker,
         },
     }
@@ -177,7 +170,6 @@ export function ProviderSettings({
                 apiKey: localConfig.apiKey,
                 baseUrl: localConfig.baseUrl,
                 timeout: localConfig.timeout,
-                adapterId: localConfig.adapterId,
                 adapterConfig: localConfig.adapterConfig,
                 model: localConfig.model,
             },
@@ -193,9 +185,8 @@ export function ProviderSettings({
             apiKey: nextConfig.apiKey || '',
             baseUrl: nextConfig.baseUrl || providerInfo?.endpoint.default || '',
             timeout: nextConfig.timeout || providerInfo?.defaults.timeout || 120000,
-            adapterId: nextConfig.adapterId || providerId,
             adapterConfig: nextConfig.adapterConfig || getAdapterConfig(providerId),
-            model: nextConfig.model || providerInfo?.models.default[0] || '',
+            model: nextConfig.model || providerInfo?.models[0] || '',
         })
         setIsAddingCustom(false)
     }
@@ -210,7 +201,6 @@ export function ProviderSettings({
                 apiKey: localConfig.apiKey,
                 baseUrl: localConfig.baseUrl,
                 timeout: localConfig.timeout,
-                adapterId: localConfig.adapterId,
                 adapterConfig: localConfig.adapterConfig,
                 model: localConfig.model,
             },
@@ -222,14 +212,10 @@ export function ProviderSettings({
         const savedApiKey = savedConfig.apiKey || getProviderApiKey(custom.id) || ''
 
         // 决定适配器配置
-        let adapterId: string
         let adapterConfig: LLMAdapterConfig
-
         if (custom.mode === 'custom' && custom.customConfig) {
-            adapterId = custom.id
             adapterConfig = savedConfig.adapterConfig || convertCustomConfigToAdapterConfig(custom)
         } else {
-            adapterId = savedConfig.adapterId || custom.mode
             adapterConfig = savedConfig.adapterConfig || getAdapterConfig(custom.mode)
         }
 
@@ -239,7 +225,6 @@ export function ProviderSettings({
             apiKey: savedApiKey,
             baseUrl: savedConfig.baseUrl || custom.baseUrl,
             timeout: savedConfig.timeout || custom.defaults?.timeout || 120000,
-            adapterId,
             adapterConfig,
             model: savedConfig.model || custom.models[0] || '',
         })
@@ -258,38 +243,34 @@ export function ProviderSettings({
     }
 
     // 更新 adapterOverrides 并同步到 adapterConfig
-    const handleAdapterOverridesChange = (overrides: AdapterOverrides | undefined) => {
+    const handleAdvancedConfigChange = (advanced: AdvancedConfig | undefined) => {
         const newConfigs = { ...localProviderConfigs }
         if (!newConfigs[localConfig.provider]) {
             newConfigs[localConfig.provider] = { customModels: [] }
         }
 
-        // 保存 overrides
+        // 保存 advanced 配置
         newConfigs[localConfig.provider] = {
             ...newConfigs[localConfig.provider],
-            adapterOverrides: overrides,
+            advanced: advanced,
         }
 
         // 如果是自定义 Provider，同时更新 adapterConfig
-        if (isCustomSelected && overrides) {
+        if (isCustomSelected && advanced) {
             const baseConfig = localConfig.adapterConfig || getAdapterConfig('openai')
             const updatedAdapterConfig: LLMAdapterConfig = {
                 ...baseConfig,
-                isBuiltin: false,
                 request: {
                     ...baseConfig.request,
-                    endpoint: overrides.request?.endpoint || baseConfig.request.endpoint,
-                    bodyTemplate: overrides.request?.bodyTemplate || baseConfig.request.bodyTemplate,
+                    endpoint: advanced.request?.endpoint || baseConfig.request.endpoint,
+                    bodyTemplate: advanced.request?.bodyTemplate || baseConfig.request.bodyTemplate,
                 },
                 response: {
                     ...baseConfig.response,
-                    contentField: overrides.response?.contentField || baseConfig.response.contentField,
-                    reasoningField: overrides.response?.reasoningField,
-                    toolCallField: overrides.response?.toolCallField,
-                    toolNamePath: overrides.response?.toolNamePath,
-                    toolArgsPath: overrides.response?.toolArgsPath,
-                    argsIsObject: overrides.response?.argsIsObject,
-                    doneMarker: overrides.response?.doneMarker || baseConfig.response.doneMarker,
+                    contentField: advanced.response?.contentField || baseConfig.response.contentField,
+                    reasoningField: advanced.response?.reasoningField,
+                    toolCallField: advanced.response?.toolCallField,
+                    doneMarker: advanced.response?.doneMarker || baseConfig.response.doneMarker,
                 },
             }
             newConfigs[localConfig.provider].adapterConfig = updatedAdapterConfig
@@ -375,7 +356,6 @@ export function ProviderSettings({
                                     newConfigs[newConfig.id] = {
                                         ...newConfigs[newConfig.id],
                                         adapterConfig,
-                                        adapterId: newConfig.id,
                                         model: newConfig.defaultModel || newConfig.models[0] || '',
                                         customModels: newConfig.models,
                                     }
@@ -584,8 +564,8 @@ export function ProviderSettings({
 
                     {/* 适配器配置（显示默认配置，支持覆盖） */}
                     <AdapterOverridesEditor
-                        overrides={localProviderConfigs[localConfig.provider]?.adapterOverrides || adapterConfigToOverrides(currentAdapterConfig, isCustomSelected)}
-                        onChange={handleAdapterOverridesChange}
+                        overrides={localProviderConfigs[localConfig.provider]?.advanced || adapterConfigToAdvanced(currentAdapterConfig, isCustomSelected)}
+                        onChange={handleAdvancedConfigChange}
                         language={language}
                         defaultEndpoint={getAdapterConfig(localConfig.provider)?.request?.endpoint || '/chat/completions'}
                         defaultConfig={isCustomSelected ? currentAdapterConfig : getAdapterConfig(localConfig.provider)}

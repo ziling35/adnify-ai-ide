@@ -110,8 +110,9 @@ export interface LLMConfig {
   thinkingEnabled?: boolean
   thinkingBudget?: number
   // 适配器配置
-  adapterId?: string
   adapterConfig?: import('@/shared/config/providers').LLMAdapterConfig
+  // 高级配置
+  advanced?: import('@/shared/config/providers').AdvancedConfig
 }
 
 // Security Audit Log Entry

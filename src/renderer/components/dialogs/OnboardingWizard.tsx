@@ -515,7 +515,7 @@ function ProviderStep({
                 onClick={() => setConfig({
                   ...config,
                   provider: p.id as any,
-                  model: p.models.default[0],
+                  model: p.models[0],
                   baseUrl: undefined
                 })}
                 className={`px-3 py-2.5 rounded-xl border text-sm font-medium transition-all ${config.provider === p.id
@@ -547,7 +547,7 @@ function ProviderStep({
             <Select
               value={config.model}
               onChange={(value) => setConfig({ ...config, model: value })}
-              options={selectedProvider.models.default.map(m => ({ value: m, label: m }))}
+              options={selectedProvider.models.map(m => ({ value: m, label: m }))}
               className="w-full"
             />
           </div>

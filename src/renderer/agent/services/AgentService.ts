@@ -57,8 +57,8 @@ export interface LLMCallConfig {
   maxTokens?: number
   temperature?: number
   topP?: number
-  adapterId?: string
   adapterConfig?: import('@/shared/config/providers').LLMAdapterConfig
+  advanced?: import('@/shared/config/providers').AdvancedConfig
 }
 
 // ===== Agent 服务类 =====

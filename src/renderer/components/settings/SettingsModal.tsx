@@ -81,15 +81,14 @@ export default function SettingsModal() {
                 apiKey: localConfig.apiKey,
                 baseUrl: localConfig.baseUrl,
                 timeout: localConfig.timeout,
-                adapterId: localConfig.adapterId,
                 adapterConfig: localConfig.adapterConfig,
+                advanced: localConfig.advanced,
                 model: localConfig.model,
             }
         }
         setProviderConfig(localConfig.provider, updatedProviderConfigs[localConfig.provider])
 
         // 使用 settingsService 统一保存到 app-settings
-        // 注意：不再保存 editorSettings，编辑器配置由 editorConfig.ts 独立管理
         await settingsService.saveAll({
             llmConfig: localConfig as any,
             language: localLanguage,
@@ -127,7 +126,7 @@ export default function SettingsModal() {
     const providers = Object.entries(PROVIDERS).map(([id, p]) => ({
         id,
         name: p.name,
-        models: [...(p.models.default || []), ...(providerConfigs[id]?.customModels || [])]
+        models: [...(p.models || []), ...(providerConfigs[id]?.customModels || [])]
     }))
     const selectedProvider = providers.find(p => p.id === localConfig.provider)
 

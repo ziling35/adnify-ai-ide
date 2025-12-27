@@ -1,27 +1,71 @@
 /**
  * Anthropic Provider
  * 支持 Claude 系列模型
+ * 
+ * 认证方式：
+ * - 官方 API: x-api-key header
+ * - 自定义 baseUrl (代理): Bearer token (可通过 advanced.auth 配置)
  */
 
 import { logger } from '@shared/utils/Logger'
 import Anthropic from '@anthropic-ai/sdk'
 import { BaseProvider } from './base'
-import { ChatParams, ToolDefinition, LLMToolCall, MessageContent, LLMErrorCode } from '../types'
+import { ChatParams, ToolDefinition, LLMToolCall, MessageContent, LLMErrorCode, LLMConfig } from '../types'
 import { adapterService } from '../adapterService'
 import { AGENT_DEFAULTS } from '@shared/constants'
 
 export class AnthropicProvider extends BaseProvider {
   private client: Anthropic
+  private apiKey: string
+  private baseUrl?: string
+  private timeout: number
+  private useBearer: boolean  // 是否使用 Bearer token 认证
 
-  constructor(apiKey: string, baseUrl?: string, timeout?: number) {
+  constructor(config: LLMConfig) {
     super('Anthropic')
-    const timeoutMs = timeout || AGENT_DEFAULTS.DEFAULT_LLM_TIMEOUT
-    this.log('info', 'Initializing', { baseUrl: baseUrl || 'default', timeout: timeoutMs })
-    this.client = new Anthropic({
-      apiKey,
-      baseURL: baseUrl,
-      timeout: timeoutMs,
-    })
+    this.apiKey = config.apiKey
+    this.timeout = config.timeout || AGENT_DEFAULTS.DEFAULT_LLM_TIMEOUT
+    
+    // 处理 baseUrl
+    let baseUrl = config.baseUrl
+    if (baseUrl) {
+      // 去掉末尾的 /v1（Anthropic SDK 会自动加）
+      baseUrl = baseUrl.replace(/\/v1\/?$/, '')
+      this.baseUrl = baseUrl
+    }
+    
+    // 判断认证方式
+    // 1. 如果配置了 advanced.auth，使用配置的认证方式
+    // 2. 如果是自定义 baseUrl（代理），默认使用 Bearer token
+    // 3. 否则使用 Anthropic 默认的 x-api-key
+    const authConfig = config.advanced?.auth
+    if (authConfig) {
+      this.useBearer = authConfig.type === 'bearer'
+    } else {
+      // 自定义 baseUrl 默认使用 Bearer token
+      this.useBearer = !!this.baseUrl
+    }
+    
+    this.log('info', 'Initialized', { baseUrl: this.baseUrl || 'default', useBearer: this.useBearer })
+    
+    // 创建 Anthropic client
+    const clientOptions: ConstructorParameters<typeof Anthropic>[0] = {
+      apiKey: this.apiKey,
+      timeout: this.timeout,
+    }
+    
+    if (this.baseUrl) {
+      clientOptions.baseURL = this.baseUrl
+    }
+    
+    // 如果使用 Bearer token，添加 Authorization header
+    if (this.useBearer) {
+      clientOptions.defaultHeaders = {
+        'Authorization': `Bearer ${this.apiKey}`,
+      }
+    }
+    
+    this.client = new Anthropic(clientOptions)
   }
 
   private convertContent(
@@ -56,12 +100,10 @@ export class AnthropicProvider extends BaseProvider {
   private convertTools(tools?: ToolDefinition[], adapterId?: string): Anthropic.Tool[] | undefined {
     if (!tools?.length) return undefined
 
-    // 如果指定了自定义 adapterId 且不是默认 anthropic，使用 adapterService
     if (adapterId && adapterId !== 'anthropic') {
       return adapterService.convertTools(tools, adapterId) as Anthropic.Tool[]
     }
 
-    // 默认使用 Anthropic 原生格式
     return tools.map((tool) => ({
       name: tool.name,
       description: tool.description,
@@ -84,7 +126,7 @@ export class AnthropicProvider extends BaseProvider {
     } = params
 
     try {
-      this.log('info', 'Starting chat', { model, messageCount: messages.length })
+      this.log('info', 'Chat', { model, messageCount: messages.length })
 
       const anthropicMessages: Anthropic.MessageParam[] = []
 
@@ -126,10 +168,25 @@ export class AnthropicProvider extends BaseProvider {
       // 构建请求参数
       const requestParams: Record<string, unknown> = {
         model,
-        max_tokens: 8192,
-        system: systemPrompt,
+        max_tokens: params.maxTokens || AGENT_DEFAULTS.DEFAULT_MAX_TOKENS,
         messages: anthropicMessages,
-        tools: this.convertTools(tools, adapterConfig?.id),
+      }
+
+      // 添加 LLM 参数
+      if (params.temperature !== undefined) {
+        requestParams.temperature = params.temperature
+      }
+      if (params.topP !== undefined) {
+        requestParams.top_p = params.topP
+      }
+
+      if (systemPrompt) {
+        requestParams.system = systemPrompt
+      }
+
+      const convertedTools = this.convertTools(tools, adapterConfig?.id)
+      if (convertedTools && convertedTools.length > 0) {
+        requestParams.tools = convertedTools
       }
 
       // 应用适配器的请求体模板参数
@@ -155,8 +212,7 @@ export class AnthropicProvider extends BaseProvider {
         onStream({ type: 'text', content: text })
       })
 
-      // 支持 Anthropic 的思考块（Claude 3.7+）
-      // 使用 streamEvent 绕过 MessageStreamEvents 的类型限制
+      // 支持 Anthropic 的思考块
       stream.on('streamEvent', (event) => {
         if (event.type === 'content_block_delta' && event.delta.type === 'thinking_delta') {
           const thinking = (event.delta as any).thinking
@@ -178,11 +234,6 @@ export class AnthropicProvider extends BaseProvider {
         }
       }
 
-      this.log('info', 'Chat complete', {
-        contentLength: fullContent.length,
-        toolCallCount: toolCalls.length,
-      })
-
       onComplete({
         content: fullContent,
         toolCalls: toolCalls.length > 0 ? toolCalls : undefined,
@@ -194,7 +245,6 @@ export class AnthropicProvider extends BaseProvider {
       })
     } catch (error: unknown) {
       const llmError = this.parseError(error)
-      // ABORTED 是用户主动取消，不是错误
       if (llmError.code === LLMErrorCode.ABORTED) {
         this.log('info', 'Chat aborted by user')
       } else {
