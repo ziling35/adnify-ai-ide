@@ -5,6 +5,8 @@
  * 这是唯一的 Search/Replace 实现，所有其他模块应该从这里导入
  */
 
+import * as Diff from 'diff'
+
 // Search/Replace 块格式 (Git 风格，LLM 更熟悉)
 export const SEARCH_MARKER = '<<<<<<< SEARCH'
 export const DIVIDER_MARKER = '======='
@@ -201,35 +203,28 @@ export function applySearchReplaceBlocks(
 
 /**
  * 计算两个文本之间的行数变化
- * 使用简单的 LCS 算法计算实际增加和删除的行数
+ * 使用 diff 库（Myers 算法）计算精确的增加和删除行数
  */
 export function calculateLineChanges(
     oldContent: string,
     newContent: string
 ): { added: number; removed: number } {
-    const oldLines = oldContent.split('\n')
-    const newLines = newContent.split('\n')
-
-    // 构建简单的 LCS 长度矩阵
-    const m = oldLines.length
-    const n = newLines.length
-    const dp: number[][] = Array(m + 1)
-        .fill(null)
-        .map(() => Array(n + 1).fill(0))
-
-    for (let i = 1; i <= m; i++) {
-        for (let j = 1; j <= n; j++) {
-            if (oldLines[i - 1] === newLines[j - 1]) {
-                dp[i][j] = dp[i - 1][j - 1] + 1
-            } else {
-                dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1])
-            }
+    const changes = Diff.diffLines(oldContent, newContent)
+    
+    let added = 0
+    let removed = 0
+    
+    for (const change of changes) {
+        // 计算实际行数（排除末尾空行）
+        const lines = change.value.split('\n')
+        const lineCount = change.value.endsWith('\n') ? lines.length - 1 : lines.length
+        
+        if (change.added) {
+            added += lineCount
+        } else if (change.removed) {
+            removed += lineCount
         }
     }
-
-    const commonLines = dp[m][n]
-    const removed = m - commonLines
-    const added = n - commonLines
 
     return { added, removed }
 }

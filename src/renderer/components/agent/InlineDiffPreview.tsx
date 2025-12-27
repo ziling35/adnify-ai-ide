@@ -1,15 +1,16 @@
 /**
- * InlineDiffPreview - 轻量级内联 Diff 预览组件
- * 用于在聊天面板中显示代码变更的 unified diff 视图
+ * InlineDiffPreview - 内联 Diff 预览组件
+ * 使用 diff 库（Myers 算法，Git 同款）计算精确的文件差异
  * 支持语法高亮、删除/新增行颜色区分
  */
 
 import React, { useMemo } from 'react'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { oneDark } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import * as Diff from 'diff'
 
 export interface DiffLine {
-    type: 'add' | 'remove' | 'unchanged' | 'context'
+    type: 'add' | 'remove' | 'unchanged'
     content: string
     oldLineNumber?: number
     newLineNumber?: number
@@ -39,65 +40,41 @@ function getLanguageFromPath(path: string): string {
     return langMap[ext || ''] || 'text'
 }
 
-// 简单的 diff 算法 - 基于双指针比较
-function computeDiff(oldLines: string[], newLines: string[]): DiffLine[] {
-    // 性能保护：如果文件过大，降级为简单显示，避免卡死 UI
-    if (oldLines.length + newLines.length > 3000) {
-        return newLines.map((line, i) => ({
-            type: 'add',
-            content: line,
-            newLineNumber: i + 1
-        }))
-    }
-
+// 使用 diff 库计算行级差异（Myers 算法）
+function computeDiff(oldContent: string, newContent: string): DiffLine[] {
+    const changes = Diff.diffLines(oldContent, newContent)
     const result: DiffLine[] = []
-
-    let oldIdx = 0
-    let newIdx = 0
+    
     let oldLineNum = 1
     let newLineNum = 1
 
-    while (oldIdx < oldLines.length || newIdx < newLines.length) {
-        const oldLine = oldLines[oldIdx]
-        const newLine = newLines[newIdx]
+    for (const change of changes) {
+        const lines = change.value.split('\n')
+        // 移除最后一个空行（split 产生的）
+        if (lines[lines.length - 1] === '') {
+            lines.pop()
+        }
 
-        if (oldIdx >= oldLines.length) {
-            result.push({ type: 'add', content: newLine, newLineNumber: newLineNum++ })
-            newIdx++
-        } else if (newIdx >= newLines.length) {
-            result.push({ type: 'remove', content: oldLine, oldLineNumber: oldLineNum++ })
-            oldIdx++
-        } else if (oldLine === newLine) {
-            result.push({ type: 'unchanged', content: oldLine, oldLineNumber: oldLineNum++, newLineNumber: newLineNum++ })
-            oldIdx++
-            newIdx++
-        } else {
-            const lookAhead = 3
-            let foundInOld = -1
-            let foundInNew = -1
-
-            for (let i = 0; i < lookAhead && newIdx + i < newLines.length; i++) {
-                if (newLines[newIdx + i] === oldLine) { foundInNew = i; break }
-            }
-            for (let i = 0; i < lookAhead && oldIdx + i < oldLines.length; i++) {
-                if (oldLines[oldIdx + i] === newLine) { foundInOld = i; break }
-            }
-
-            if (foundInNew >= 0 && (foundInOld < 0 || foundInNew <= foundInOld)) {
-                for (let i = 0; i < foundInNew; i++) {
-                    result.push({ type: 'add', content: newLines[newIdx + i], newLineNumber: newLineNum++ })
-                }
-                newIdx += foundInNew
-            } else if (foundInOld >= 0) {
-                for (let i = 0; i < foundInOld; i++) {
-                    result.push({ type: 'remove', content: oldLines[oldIdx + i], oldLineNumber: oldLineNum++ })
-                }
-                oldIdx += foundInOld
+        for (const line of lines) {
+            if (change.added) {
+                result.push({
+                    type: 'add',
+                    content: line,
+                    newLineNumber: newLineNum++
+                })
+            } else if (change.removed) {
+                result.push({
+                    type: 'remove',
+                    content: line,
+                    oldLineNumber: oldLineNum++
+                })
             } else {
-                result.push({ type: 'remove', content: oldLine, oldLineNumber: oldLineNum++ })
-                result.push({ type: 'add', content: newLine, newLineNumber: newLineNum++ })
-                oldIdx++
-                newIdx++
+                result.push({
+                    type: 'unchanged',
+                    content: line,
+                    oldLineNumber: oldLineNum++,
+                    newLineNumber: newLineNum++
+                })
             }
         }
     }
@@ -175,28 +152,33 @@ const DiffLineItem = React.memo(({ line, language }: { line: DiffLine, language:
     )
 })
 
+DiffLineItem.displayName = 'DiffLineItem'
+
 export default function InlineDiffPreview({
     oldContent,
     newContent,
     filePath,
     isStreaming = false,
-    maxLines = 50,
+    maxLines = 100,
 }: InlineDiffPreviewProps) {
     const language = useMemo(() => getLanguageFromPath(filePath), [filePath])
 
     const diffLines = useMemo(() => {
-        const oldLines = oldContent.split('\n')
-        const newLines = newContent.split('\n')
-        return computeDiff(oldLines, newLines)
+        return computeDiff(oldContent, newContent)
     }, [oldContent, newContent])
 
-    // 过滤只显示变更行及其上下文
+    // 智能过滤：只显示变更行及其上下文
     const displayLines = useMemo(() => {
-        if (diffLines.length <= maxLines) return diffLines
+        // 如果变更不多，直接显示全部
+        const changedCount = diffLines.filter(l => l.type !== 'unchanged').length
+        if (diffLines.length <= maxLines || changedCount === diffLines.length) {
+            return diffLines
+        }
 
-        const contextSize = 2
+        const contextSize = 3 // 上下文行数
         const changedIndices = new Set<number>()
 
+        // 标记所有变更行及其上下文
         diffLines.forEach((line, idx) => {
             if (line.type === 'add' || line.type === 'remove') {
                 for (let i = Math.max(0, idx - contextSize); i <= Math.min(diffLines.length - 1, idx + contextSize); i++) {
@@ -205,18 +187,26 @@ export default function InlineDiffPreview({
             }
         })
 
-        const result: (DiffLine | { type: 'ellipsis' })[] = []
+        // 构建显示结果，添加省略号
+        const result: (DiffLine | { type: 'ellipsis'; count: number })[] = []
         let lastIdx = -1
+        const sortedIndices = Array.from(changedIndices).sort((a, b) => a - b)
 
-        Array.from(changedIndices).sort((a, b) => a - b).forEach(idx => {
+        for (const idx of sortedIndices) {
             if (lastIdx >= 0 && idx - lastIdx > 1) {
-                result.push({ type: 'ellipsis' })
+                // 添加省略号，显示跳过的行数
+                result.push({ type: 'ellipsis', count: idx - lastIdx - 1 })
             }
             result.push(diffLines[idx])
             lastIdx = idx
-        })
+        }
 
-        return result.slice(0, maxLines)
+        // 如果末尾还有未显示的行
+        if (lastIdx < diffLines.length - 1) {
+            result.push({ type: 'ellipsis', count: diffLines.length - lastIdx - 1 })
+        }
+
+        return result
     }, [diffLines, maxLines])
 
     if (displayLines.length === 0) {
@@ -230,17 +220,17 @@ export default function InlineDiffPreview({
     return (
         <div className="font-mono text-[11px] leading-relaxed">
             {displayLines.map((line, idx) => {
-                if ('type' in line && line.type === 'ellipsis') {
+                if ('count' in line && line.type === 'ellipsis') {
                     return (
-                        <div key={`ellipsis-${idx}`} className="text-text-muted/50 text-center py-0.5 text-[10px]">
-                            ···
+                        <div key={`ellipsis-${idx}`} className="text-text-muted/40 text-center py-1 text-[10px] bg-white/5">
+                            ··· {line.count} unchanged lines ···
                         </div>
                     )
                 }
 
                 return (
                     <DiffLineItem
-                        key={`${(line as DiffLine).type}-${idx}`}
+                        key={`${(line as DiffLine).type}-${idx}-${(line as DiffLine).oldLineNumber || (line as DiffLine).newLineNumber}`}
                         line={line as DiffLine}
                         language={language}
                     />
@@ -254,29 +244,28 @@ export default function InlineDiffPreview({
                     <span className="opacity-70">Generating...</span>
                 </div>
             )}
-
-            {/* 截断提示 */}
-            {diffLines.length > maxLines && (
-                <div className="text-[10px] text-text-muted/60 text-center py-1 border-t border-white/5">
-                    ... {diffLines.length - maxLines} more lines
-                </div>
-            )}
         </div>
     )
 }
 
-// 导出统计工具函数
+// 导出统计工具函数 - 使用 diff 库计算准确的统计
 export function getDiffStats(oldContent: string, newContent: string): { added: number; removed: number } {
-    const oldLines = oldContent.split('\n')
-    const newLines = newContent.split('\n')
-    const diff = computeDiff(oldLines, newLines)
-
+    const changes = Diff.diffLines(oldContent, newContent)
+    
     let added = 0
     let removed = 0
-    diff.forEach(line => {
-        if (line.type === 'add') added++
-        if (line.type === 'remove') removed++
-    })
+    
+    for (const change of changes) {
+        const lineCount = change.value.split('\n').filter(l => l !== '' || change.value === '\n').length
+        // 修正：如果值以换行结尾，减去一个空行
+        const actualLines = change.value.endsWith('\n') ? lineCount : lineCount
+        
+        if (change.added) {
+            added += actualLines
+        } else if (change.removed) {
+            removed += actualLines
+        }
+    }
 
     return { added, removed }
 }

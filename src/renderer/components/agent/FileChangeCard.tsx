@@ -37,6 +37,11 @@ export default function FileChangeCard({
 
     // 获取新旧内容用于 diff
     const oldContent = useMemo(() => {
+        // 优先从 meta 获取（工具执行完成后会有准确的 oldContent）
+        if (meta?.oldContent !== undefined) {
+            return meta.oldContent as string
+        }
+        
         // 在流式传输或运行阶段，如果工具是局部编辑类（非全量覆盖），
         // 且还没有 meta 结果（即工具未完成），暂时忽略旧内容，
         // 避免将 patch 片段与完整旧文件对比导致显示大面积删除。
@@ -45,7 +50,8 @@ export default function FileChangeCard({
             const isPartialEdit = ['edit_file', 'replace_file_content'].includes(toolCall.name)
             if (isPartialEdit) return ''
         }
-        return (meta?.oldContent as string) || ''
+        
+        return ''
     }, [meta, isRunning, isStreaming, toolCall.name])
 
     const newContent = useMemo(() => {
@@ -54,15 +60,23 @@ export default function FileChangeCard({
         return (args.content || args.code || args.search_replace_blocks || args.replacement || args.source) as string || ''
     }, [args, meta])
 
-    // 计算行数变化
+    // 计算行数变化 - 优先使用工具返回的准确统计
     const diffStats = useMemo(() => {
+        // 优先使用工具执行后返回的准确统计数据
+        if (meta?.linesAdded !== undefined || meta?.linesRemoved !== undefined) {
+            return {
+                added: (meta.linesAdded as number) || 0,
+                removed: (meta.linesRemoved as number) || 0
+            }
+        }
+        // 流式传输中或没有 meta 时，使用 diff 计算（可能不准确）
         if (!newContent) return { added: 0, removed: 0 }
         try {
             return getDiffStats(oldContent, newContent)
         } catch {
             return { added: 0, removed: 0 }
         }
-    }, [oldContent, newContent])
+    }, [oldContent, newContent, meta])
 
     // 自动展开 logic
     useEffect(() => {

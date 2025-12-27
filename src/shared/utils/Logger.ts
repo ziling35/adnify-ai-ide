@@ -309,15 +309,18 @@ class LoggerClass {
   }
 
   /**
-   * 处理文件写入队列
+   * 处理文件写入队列（仅主进程）
    */
   private async processFileWriteQueue(): Promise<void> {
+    // 仅在主进程中执行文件写入
+    if (!this.isMain) return
     if (this.isWriting || this.fileWriteQueue.length === 0) return
     if (!this.config.logFilePath) return
 
     this.isWriting = true
 
     try {
+      // 动态导入 fs 和 path（仅主进程）
       const fs = await import('fs')
       const path = await import('path')
 
@@ -353,9 +356,11 @@ class LoggerClass {
   }
 
   /**
-   * 日志文件轮转
+   * 日志文件轮转（仅主进程）
    */
   private async rotateLogFiles(logPath: string): Promise<void> {
+    if (!this.isMain) return
+    
     const fs = await import('fs')
     const path = await import('path')
 

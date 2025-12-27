@@ -91,7 +91,10 @@ export function handleReasoningChunk(
   state: StreamHandlerState,
   currentAssistantId: string | null
 ): void {
-  if (chunk.type !== 'reasoning' || !chunk.content) return
+  if (chunk.type !== 'reasoning') return
+  
+  // 忽略空内容
+  if (!chunk.content || chunk.content.trim() === '') return
 
   const store = useAgentStore.getState()
 
@@ -112,6 +115,7 @@ export function handleReasoningChunk(
 /**
  * 关闭推理（如果正在推理）
  * 标记当前 reasoning part 为完成状态
+ * 如果 reasoning part 没有内容，则删除它
  */
 export function closeReasoningIfNeeded(
   state: StreamHandlerState,
@@ -121,7 +125,28 @@ export function closeReasoningIfNeeded(
 
   const store = useAgentStore.getState()
   if (currentAssistantId && state.currentReasoningPartId) {
-    store.finalizeReasoningPart(currentAssistantId, state.currentReasoningPartId)
+    // 检查 reasoning part 是否有内容
+    const thread = store.getCurrentThread()
+    if (thread) {
+      const assistantMsg = thread.messages.find(
+        m => m.id === currentAssistantId && m.role === 'assistant'
+      )
+      if (assistantMsg && assistantMsg.role === 'assistant') {
+        const reasoningPart = (assistantMsg as any).parts?.find(
+          (p: any) => p.type === 'reasoning' && p.id === state.currentReasoningPartId
+        )
+        if (reasoningPart && (!reasoningPart.content || reasoningPart.content.trim() === '')) {
+          // 删除空的 reasoning part
+          const newParts = (assistantMsg as any).parts.filter(
+            (p: any) => !(p.type === 'reasoning' && p.id === state.currentReasoningPartId)
+          )
+          store.updateMessage(currentAssistantId, { parts: newParts } as any)
+        } else {
+          // 有内容，标记为完成
+          store.finalizeReasoningPart(currentAssistantId, state.currentReasoningPartId)
+        }
+      }
+    }
   }
 
   state.isReasoning = false

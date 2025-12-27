@@ -165,50 +165,53 @@ ThinkingBlock.displayName = 'ThinkingBlock'
 
 // Markdown 渲染组件 - 优化排版
 const MarkdownContent = React.memo(({ content, fontSize, isStreaming }: { content: string; fontSize: number; isStreaming?: boolean }) => {
-  const cleanedContent = isStreaming ? cleanStreamingContent(content) : content
+  // 使用 useMemo 缓存清理后的内容，避免每次渲染都执行正则
+  const cleanedContent = React.useMemo(() => {
+    return isStreaming ? cleanStreamingContent(content) : content
+  }, [content, isStreaming])
+
+  // 缓存 components 配置，避免每次渲染都创建新对象
+  const markdownComponents = React.useMemo(() => ({
+    code({ className, children, node, ...props }: any) {
+      const match = /language-(\w+)/.exec(className || '')
+      const codeContent = String(children)
+      const isCodeBlock = match || node?.position?.start?.line !== node?.position?.end?.line
+      const isInline = !isCodeBlock && !codeContent.includes('\n')
+
+      return isInline ? (
+        <code className="bg-white/10 px-1.5 py-0.5 rounded text-accent-light font-mono text-[0.9em]" {...props}>
+          {children}
+        </code>
+      ) : (
+        <CodeBlock language={match?.[1]} fontSize={fontSize}>{children}</CodeBlock>
+      )
+    },
+    p: ({ children }: any) => <p className="mb-2 last:mb-0">{children}</p>,
+    ul: ({ children }: any) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
+    ol: ({ children }: any) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
+    li: ({ children }: any) => <li className="">{children}</li>,
+    a: ({ href, children }: any) => (
+      <a href={href} target="_blank" className="text-accent hover:underline decoration-accent/50 underline-offset-2">{children}</a>
+    ),
+    blockquote: ({ children }: any) => (
+      <blockquote className="border-l-2 border-accent/40 pl-4 my-2 text-text-muted italic bg-white/5 py-1 rounded-r">{children}</blockquote>
+    ),
+    h1: ({ children }: any) => <h1 className="text-lg font-bold mb-2 mt-4 first:mt-0 text-text-primary">{children}</h1>,
+    h2: ({ children }: any) => <h2 className="text-base font-bold mb-2 mt-3 first:mt-0 text-text-primary">{children}</h2>,
+    h3: ({ children }: any) => <h3 className="text-sm font-semibold mb-1 mt-2 first:mt-0 text-text-primary">{children}</h3>,
+  }), [fontSize])
+
+  if (!cleanedContent) return null
 
   return (
-    <>
-      {/* 显示主要内容 */}
-      {cleanedContent && (
-        <div style={{ fontSize: `${fontSize}px` }} className="text-text-primary/90 leading-8 tracking-wide">
-          <ReactMarkdown
-            className="prose prose-invert max-w-none"
-            components={{
-              code({ className, children, node, ...props }) {
-                const match = /language-(\w+)/.exec(className || '')
-                const codeContent = String(children)
-                const isCodeBlock = match || node?.position?.start?.line !== node?.position?.end?.line
-                const isInline = !isCodeBlock && !codeContent.includes('\n')
-
-                return isInline ? (
-                  <code className="bg-white/10 px-1.5 py-0.5 rounded text-accent-light font-mono text-[0.9em]" {...props}>
-                    {children}
-                  </code>
-                ) : (
-                  <CodeBlock language={match?.[1]} fontSize={fontSize}>{children}</CodeBlock>
-                )
-              },
-              p: ({ children }) => <p className="mb-2 last:mb-0">{children}</p>,
-              ul: ({ children }) => <ul className="list-disc pl-4 mb-2 space-y-1">{children}</ul>,
-              ol: ({ children }) => <ol className="list-decimal pl-4 mb-2 space-y-1">{children}</ol>,
-              li: ({ children }) => <li className="">{children}</li>,
-              a: ({ href, children }) => (
-                <a href={href} target="_blank" className="text-accent hover:underline decoration-accent/50 underline-offset-2">{children}</a>
-              ),
-              blockquote: ({ children }) => (
-                <blockquote className="border-l-2 border-accent/40 pl-4 my-2 text-text-muted italic bg-white/5 py-1 rounded-r">{children}</blockquote>
-              ),
-              h1: ({ children }) => <h1 className="text-lg font-bold mb-2 mt-4 first:mt-0 text-text-primary">{children}</h1>,
-              h2: ({ children }) => <h2 className="text-base font-bold mb-2 mt-3 first:mt-0 text-text-primary">{children}</h2>,
-              h3: ({ children }) => <h3 className="text-sm font-semibold mb-1 mt-2 first:mt-0 text-text-primary">{children}</h3>,
-            }}
-          >
-            {cleanedContent}
-          </ReactMarkdown>
-        </div>
-      )}
-    </>
+    <div style={{ fontSize: `${fontSize}px` }} className="text-text-primary/90 leading-8 tracking-wide">
+      <ReactMarkdown
+        className="prose prose-invert max-w-none"
+        components={markdownComponents}
+      >
+        {cleanedContent}
+      </ReactMarkdown>
+    </div>
   )
 })
 MarkdownContent.displayName = 'MarkdownContent'
@@ -240,6 +243,10 @@ const RenderPart = React.memo(({
 
   if (isReasoningPart(part)) {
     const reasoningPart = part as ReasoningPart
+    // 跳过空内容且非流式的 reasoning part
+    if (!reasoningPart.content?.trim() && !reasoningPart.isStreaming) {
+      return null
+    }
     return (
       <ThinkingBlock
         key={`reasoning-${index}`}

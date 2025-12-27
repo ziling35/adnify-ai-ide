@@ -1,5 +1,5 @@
 import { logger } from '@utils/Logger'
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
 import {
   AlertTriangle,
@@ -108,16 +108,28 @@ export default function ChatPanel() {
   const virtuosoRef = useRef<VirtuosoHandle>(null)
   const [atBottom, setAtBottom] = useState(true)
 
-  // 自动滚动逻辑
+  // 缓存过滤后的消息列表，避免每次渲染都创建新数组
+  const filteredMessages = useMemo(() => 
+    messages.filter(m => m.role === 'user' || m.role === 'assistant'),
+    [messages]
+  )
+
+  // 自动滚动逻辑 - 使用节流避免频繁滚动
+  const lastScrollTime = useRef(0)
   useEffect(() => {
     if (isStreaming && atBottom) {
-      virtuosoRef.current?.scrollToIndex({
-        index: messages.length - 1,
-        align: 'end',
-        behavior: 'auto'
-      })
+      const now = Date.now()
+      // 节流：最多每 100ms 滚动一次
+      if (now - lastScrollTime.current > 100) {
+        lastScrollTime.current = now
+        virtuosoRef.current?.scrollToIndex({
+          index: filteredMessages.length - 1,
+          align: 'end',
+          behavior: 'auto'
+        })
+      }
     }
-  }, [messages, isStreaming, atBottom])
+  }, [filteredMessages.length, isStreaming, atBottom])
 
   // 一次性同步 inputPrompt 到本地 input
   useEffect(() => {
@@ -799,13 +811,14 @@ export default function ChatPanel() {
           ) : (
             <Virtuoso
               ref={virtuosoRef}
-              data={messages.filter(m => m.role === 'user' || m.role === 'assistant')}
+              data={filteredMessages}
               atBottomStateChange={setAtBottom}
-              initialTopMostItemIndex={Math.max(0, messages.filter(m => m.role === 'user' || m.role === 'assistant').length - 1)}
+              initialTopMostItemIndex={Math.max(0, filteredMessages.length - 1)}
               followOutput={isStreaming ? 'smooth' : false}
               itemContent={(_, message) => renderMessage(message)}
               className="flex-1 custom-scrollbar"
               style={{ minHeight: '100px' }}
+              overscan={200}
             />
           )}
 

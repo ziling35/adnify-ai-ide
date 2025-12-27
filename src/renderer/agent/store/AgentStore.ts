@@ -31,6 +31,8 @@ class StreamingBuffer {
     private buffer: Map<string, string> = new Map()
     private rafId: number | null = null
     private flushCallback: ((messageId: string, content: string) => void) | null = null
+    private lastFlushTime = 0
+    private readonly MIN_FLUSH_INTERVAL = 50 // 最小刷新间隔 50ms
 
     setFlushCallback(callback: (messageId: string, content: string) => void) {
         this.flushCallback = callback
@@ -44,25 +46,46 @@ class StreamingBuffer {
 
     private scheduleFlush(): void {
         if (this.rafId) return
-        this.rafId = requestAnimationFrame(() => {
-            this.flush()
-            this.rafId = null
-        })
+        
+        const now = performance.now()
+        const timeSinceLastFlush = now - this.lastFlushTime
+        
+        // 如果距离上次刷新不足 MIN_FLUSH_INTERVAL，延迟刷新
+        if (timeSinceLastFlush < this.MIN_FLUSH_INTERVAL) {
+            this.rafId = window.setTimeout(() => {
+                this.rafId = null
+                this.flush()
+            }, this.MIN_FLUSH_INTERVAL - timeSinceLastFlush) as unknown as number
+        } else {
+            this.rafId = requestAnimationFrame(() => {
+                this.rafId = null
+                this.flush()
+            })
+        }
     }
 
     private flush(): void {
         if (!this.flushCallback) return
-        this.buffer.forEach((content, messageId) => {
+        this.lastFlushTime = performance.now()
+        
+        // 批量更新：合并所有待更新的消息
+        const updates = new Map(this.buffer)
+        this.buffer.clear()
+        
+        updates.forEach((content, messageId) => {
             if (content) {
                 this.flushCallback!(messageId, content)
             }
         })
-        this.buffer.clear()
     }
 
     flushNow(): void {
         if (this.rafId) {
-            cancelAnimationFrame(this.rafId)
+            if (typeof this.rafId === 'number' && this.rafId > 1000) {
+                clearTimeout(this.rafId)
+            } else {
+                cancelAnimationFrame(this.rafId)
+            }
             this.rafId = null
         }
         this.flush()
@@ -70,7 +93,11 @@ class StreamingBuffer {
 
     clear(): void {
         if (this.rafId) {
-            cancelAnimationFrame(this.rafId)
+            if (typeof this.rafId === 'number' && this.rafId > 1000) {
+                clearTimeout(this.rafId)
+            } else {
+                cancelAnimationFrame(this.rafId)
+            }
             this.rafId = null
         }
         this.buffer.clear()

@@ -123,11 +123,18 @@ export default defineConfig({
 					'terminal': ['@xterm/xterm', '@xterm/addon-fit', '@xterm/addon-webgl', '@xterm/addon-web-links'],
 					// Markdown 渲染 - 懒加载优化
 					'markdown': ['react-markdown', 'react-syntax-highlighter'],
+					// 动画库
+					'animation': ['framer-motion'],
 				},
 			},
 		},
 		// 增加 chunk 大小警告阈值
 		chunkSizeWarningLimit: 1500,
+		// 生产环境优化
+		minify: 'esbuild',
+		target: 'esnext',
+		// 启用 CSS 代码分割
+		cssCodeSplit: true,
 	},
 	optimizeDeps: {
 		include: ['monaco-editor']
