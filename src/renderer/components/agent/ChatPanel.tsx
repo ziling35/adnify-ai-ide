@@ -3,6 +3,7 @@ import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { Virtuoso, VirtuosoHandle } from 'react-virtuoso'
 import {
   AlertTriangle,
+  GitBranch,
   History,
   Plus,
   Trash2,
@@ -35,6 +36,10 @@ import SlashCommandPopup from './SlashCommandPopup'
 import { AgentService } from '@/renderer/agent/services/AgentService'
 import { Button } from '../ui'
 import { useToast } from '@/renderer/components/common/ToastProvider'
+import { BranchIndicator } from './BranchManager'
+import BranchManager from './BranchManager'
+import StreamRecoveryBanner from './StreamRecoveryBanner'
+import ContextCompactionIndicator, { CompactionProgressBar } from './ContextCompactionIndicator'
 
 export default function ChatPanel() {
   const {
@@ -101,6 +106,7 @@ export default function ChatPanel() {
   const [showSlashCommand, setShowSlashCommand] = useState(false)
   const [slashCommandQuery, setSlashCommandQuery] = useState('')
   const [showContextWarning, setShowContextWarning] = useState(false)
+  const [showBranches, setShowBranches] = useState(false)
 
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const inputContainerRef = useRef<HTMLDivElement>(null)
@@ -675,9 +681,20 @@ export default function ChatPanel() {
             {contextStats && (
               <ChatContextStats stats={contextStats} language={language} compact />
             )}
+            <BranchIndicator language={language} onClick={() => setShowBranches(!showBranches)} />
+            <ContextCompactionIndicator language={language} />
           </div>
 
           <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowBranches(!showBranches)}
+              title={language === 'zh' ? '分支管理' : 'Branch Manager'}
+              className="hover:bg-white/5 text-text-muted hover:text-text-primary"
+            >
+              <GitBranch className="w-4 h-4" />
+            </Button>
             <Button
               variant="ghost"
               size="icon"
@@ -753,6 +770,15 @@ export default function ChatPanel() {
           </div>
         )}
 
+        {/* Branch Manager overlay */}
+        {showBranches && (
+          <div className="absolute top-[50px] right-0 left-0 bottom-0 bg-background/95 backdrop-blur-md z-30 overflow-auto animate-fade-in">
+            <div className="max-w-2xl mx-auto">
+              <BranchManager language={language} onClose={() => setShowBranches(false)} />
+            </div>
+          </div>
+        )}
+
         {/* Drag Overlay */}
         {isDragging && (
           <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center pointer-events-none animate-fade-in">
@@ -772,6 +798,12 @@ export default function ChatPanel() {
 
         {/* Messages Area */}
         <div className="flex-1 min-h-0 relative z-0 flex flex-col pt-12">
+          {/* Stream Recovery Banner */}
+          <StreamRecoveryBanner language={language} />
+          
+          {/* Compaction Progress */}
+          <CompactionProgressBar language={language} />
+          
           {/* API Key Warning */}
           {!hasApiKey && (
             <div className="m-4 p-4 border border-warning/20 bg-warning/5 rounded-xl flex gap-3 backdrop-blur-sm relative z-10">

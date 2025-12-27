@@ -47,6 +47,8 @@ import {
 // 导入新的服务模块
 import { toolExecutionService } from './ToolExecutionService'
 import { buildLLMMessages, compressContext } from '../llm/MessageBuilder'
+import { executeToolCallsIntelligently } from './ParallelToolExecutor'
+import { streamRecoveryService } from './StreamRecoveryService'
 
 export interface LLMCallConfig {
   provider: string
@@ -304,69 +306,31 @@ class AgentServiceClass {
 
       let userRejected = false
 
-      logger.agent.info(`[Agent] Executing ${result.toolCalls.length} tool calls`)
+      logger.agent.info(`[Agent] Executing ${result.toolCalls.length} tool calls intelligently`)
 
-      const readToolCalls = result.toolCalls.filter(tc => READ_TOOLS.includes(tc.name))
-      const writeToolCalls = result.toolCalls.filter(tc => !READ_TOOLS.includes(tc.name))
+      // 使用智能并行执行器
+      const { results: toolResults, userRejected: rejected } = await executeToolCallsIntelligently(
+        result.toolCalls,
+        {
+          workspacePath,
+          currentAssistantId: this.currentAssistantId,
+        },
+        this.abortController?.signal
+      )
 
-      if (readToolCalls.length > 0 && !this.abortController?.signal.aborted) {
-        logger.agent.info(`[Agent] Executing ${readToolCalls.length} read tools in parallel`)
-        const readResults = await Promise.all(
-          readToolCalls.map(async (toolCall) => {
-            logger.agent.info(`[Agent] Executing read tool: ${toolCall.name}`, toolCall.arguments)
-            try {
-              // 使用 ToolExecutionService 执行工具
-              const toolResult = await toolExecutionService.executeToolCall(toolCall, {
-                workspacePath,
-                currentAssistantId: this.currentAssistantId,
-              })
-              return { toolCall, toolResult }
-            } catch (error: any) {
-              logger.agent.error(`[Agent] Error executing read tool ${toolCall.name}:`, error)
-              return {
-                toolCall,
-                toolResult: { success: false, content: `Error executing tool: ${error.message}`, rejected: false }
-              }
-            }
-          })
-        )
+      userRejected = rejected
 
-        for (const { toolCall, toolResult } of readResults) {
-          llmMessages.push({
-            role: 'tool' as const,
-            tool_call_id: toolCall.id,
-            content: toolResult.content,
-          })
-          if (toolResult.rejected) userRejected = true
-        }
-      }
-
-      for (const toolCall of writeToolCalls) {
-        if (this.abortController?.signal.aborted || userRejected) break
-
-        await new Promise(resolve => setTimeout(resolve, 0))
-
-        logger.agent.info(`[Agent] Executing write tool: ${toolCall.name}`, toolCall.arguments)
-        let toolResult
-        try {
-          // 使用 ToolExecutionService 执行工具
-          toolResult = await toolExecutionService.executeToolCall(toolCall, {
-            workspacePath,
-            currentAssistantId: this.currentAssistantId,
-          })
-        } catch (error: any) {
-          logger.agent.error(`[Agent] Error executing write tool ${toolCall.name}:`, error)
-          toolResult = { success: false, content: `Error executing tool: ${error.message}`, rejected: false }
-        }
-
+      // 将工具结果添加到消息历史
+      for (const { toolCall, result: toolResult } of toolResults) {
         llmMessages.push({
           role: 'tool' as const,
           tool_call_id: toolCall.id,
           content: toolResult.content,
         })
-
-        if (toolResult.rejected) userRejected = true
       }
+
+      // 收集写操作用于自动检查
+      const writeToolCalls = result.toolCalls.filter(tc => !READ_TOOLS.includes(tc.name))
 
       const { agentConfig } = useStore.getState()
       if (agentConfig.enableAutoFix && !userRejected && writeToolCalls.length > 0 && workspacePath) {
@@ -443,6 +407,11 @@ class AgentServiceClass {
       messageCount: messages.length,
     })
 
+    // 启动流式恢复会话
+    if (this.currentAssistantId) {
+      streamRecoveryService.startSession(this.currentAssistantId, messages)
+    }
+
     return new Promise((resolve) => {
       // 重置流式状态
       this.streamState = createStreamHandlerState()
@@ -463,6 +432,12 @@ class AgentServiceClass {
 
           // 处理各类流式事件
           handleTextChunk(chunk, this.streamState, this.currentAssistantId)
+          
+          // 更新恢复点
+          if (chunk.type === 'text' && chunk.content) {
+            streamRecoveryService.appendContent(chunk.content)
+          }
+          
           if (chunk.type === 'text' && this.currentAssistantId) {
             detectStreamingXMLToolCalls(this.streamState, this.currentAssistantId)
           }
@@ -487,6 +462,9 @@ class AgentServiceClass {
         window.electronAPI.onLLMDone((result) => {
           // 结束性能监控
           performanceMonitor.end(`llm:${config.model}`, true)
+          
+          // 成功完成，结束恢复会话
+          streamRecoveryService.endSession(true)
 
           cleanupListeners()
           const finalResult = handleLLMDone(result, this.streamState, this.currentAssistantId)
@@ -506,6 +484,9 @@ class AgentServiceClass {
           // 结束性能监控（失败）
           performanceMonitor.end(`llm:${config.model}`, false, { error: error.message })
 
+          // 记录错误到恢复服务
+          streamRecoveryService.recordError(error.message)
+
           closeReasoningIfNeeded(this.streamState, this.currentAssistantId)
           cleanupListeners()
           resolve({ error: error.message })
@@ -520,6 +501,7 @@ class AgentServiceClass {
         systemPrompt: '',
       }).catch((err) => {
         cleanupListeners()
+        streamRecoveryService.recordError(err.message || 'Failed to send message')
         resolve({ error: err.message || 'Failed to send message' })
       })
     })

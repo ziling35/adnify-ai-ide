@@ -16,3 +16,6 @@ export type { PlanSlice, PlanState, PlanActions } from './planSlice'
 
 export { createStreamSlice } from './streamSlice'
 export type { StreamSlice, StreamSliceState, StreamActions } from './streamSlice'
+
+export { createBranchSlice } from './branchSlice'
+export type { BranchSlice, BranchState, BranchActions, Branch } from './branchSlice'

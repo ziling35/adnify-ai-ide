@@ -14,6 +14,10 @@ export {
     selectContextItems,
     selectIsStreaming,
     selectIsAwaitingApproval,
+    selectBranches,
+    selectActiveBranch,
+    selectIsOnBranch,
+    selectContextSummary,
 } from './store/AgentStore'
 
 // 核心服务
@@ -37,6 +41,12 @@ export { sessionService } from './services/sessionService'
 export { rulesService } from './services/rulesService'
 export { composerService } from './services/composerService'
 
+// 新增服务
+export { contextCompactionService } from './services/ContextCompactionService'
+export { executeToolCallsIntelligently, getExecutionStats } from './services/ParallelToolExecutor'
+export { streamRecoveryService } from './services/StreamRecoveryService'
+export { toolExecutionService } from './services/ToolExecutionService'
+
 // LLM 相关
 export { buildContextContent, buildUserContent, calculateContextStats } from './llm/ContextBuilder'
 export { buildLLMMessages, compressContext } from './llm/MessageBuilder'
@@ -51,3 +61,6 @@ export { getAgentConfig, isRetryableError } from './utils/AgentConfig'
 
 // Prompts
 export { buildSystemPrompt } from './prompts/prompts'
+
+// 分支类型
+export type { Branch } from './store/slices/branchSlice'

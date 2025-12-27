@@ -16,6 +16,7 @@ import {
   createCompactedSystemMessage,
   calculateSavings,
 } from '../utils/ContextCompressor'
+import { contextCompactionService } from '../services/ContextCompactionService'
 
 // 从 ContextBuilder 导入已有的函数
 export { buildContextContent, buildUserContent, calculateContextStats } from './ContextBuilder'
@@ -45,19 +46,32 @@ export async function buildLLMMessages(
 
   // 检查是否需要压缩上下文
   if (shouldCompactContext(filteredMessages)) {
-    logger.agent.info('[MessageBuilder] Context exceeds threshold, compacting...')
+    logger.agent.info('[MessageBuilder] Context exceeds threshold, checking for compaction...')
 
-    const existingSummary = (store as any).contextSummary
+    // 优先使用已有的摘要
+    const existingSummary = store.contextSummary || contextCompactionService.getSummary()
+    
     if (existingSummary) {
       compactedSummary = existingSummary
       const { recentMessages, messagesToCompact } = prepareMessagesForCompact(filteredMessages as any)
       
       // 计算并记录压缩节省的 Token 数
       const savings = calculateSavings(messagesToCompact as any, existingSummary)
-      logger.agent.info(`[MessageBuilder] Context compression: saved ${savings.savedTokens} tokens (${savings.savedPercent}%)`)
+      logger.agent.info(`[MessageBuilder] Using existing summary: saved ${savings.savedTokens} tokens (${savings.savedPercent}%)`)
       
       filteredMessages = recentMessages as NonCheckpointMessage[]
     } else {
+      // 尝试生成新的摘要（异步，不阻塞当前请求）
+      contextCompactionService.requestCompaction(filteredMessages as any).then(summary => {
+        if (summary) {
+          store.setContextSummary(summary)
+          logger.agent.info('[MessageBuilder] New summary generated and saved')
+        }
+      }).catch(err => {
+        logger.agent.warn('[MessageBuilder] Failed to generate summary:', err)
+      })
+      
+      // 当前请求使用简单截断
       filteredMessages = filteredMessages.slice(-llmConfig.maxHistoryMessages)
     }
   } else {

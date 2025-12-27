@@ -13,17 +13,26 @@ import {
     createCheckpointSlice,
     createPlanSlice,
     createStreamSlice,
+    createBranchSlice,
     type ThreadSlice,
     type MessageSlice,
     type CheckpointSlice,
     type PlanSlice,
     type StreamSlice,
+    type BranchSlice,
+    type Branch,
 } from './slices'
 import type { ChatMessage, ContextItem } from '../types'
 
 // ===== Store 类型 =====
 
-export type AgentStore = ThreadSlice & MessageSlice & CheckpointSlice & PlanSlice & StreamSlice
+// 上下文摘要状态
+interface ContextSummaryState {
+    contextSummary: string | null
+    setContextSummary: (summary: string | null) => void
+}
+
+export type AgentStore = ThreadSlice & MessageSlice & CheckpointSlice & PlanSlice & StreamSlice & BranchSlice & ContextSummaryState
 
 // ===== 流式响应节流优化 =====
 
@@ -117,6 +126,14 @@ export const useAgentStore = create<AgentStore>()(
             const checkpointSlice = createCheckpointSlice(...args)
             const planSlice = createPlanSlice(...args)
             const streamSlice = createStreamSlice(...args)
+            const branchSlice = createBranchSlice(...args)
+
+            // 上下文摘要状态
+            const [set] = args
+            const contextSummaryState: ContextSummaryState = {
+                contextSummary: null,
+                setContextSummary: (summary) => set({ contextSummary: summary } as any),
+            }
 
             // 重写 appendToAssistant 使用 StreamingBuffer
             messageSlice.appendToAssistant = (messageId: string, content: string) => {
@@ -136,6 +153,8 @@ export const useAgentStore = create<AgentStore>()(
                 ...checkpointSlice,
                 ...planSlice,
                 ...streamSlice,
+                ...branchSlice,
+                ...contextSummaryState,
             }
         },
         {
@@ -146,6 +165,9 @@ export const useAgentStore = create<AgentStore>()(
                 currentThreadId: state.currentThreadId,
                 autoApprove: state.autoApprove,
                 plan: state.plan,
+                branches: state.branches,
+                activeBranchId: state.activeBranchId,
+                contextSummary: state.contextSummary,
             }),
         }
     )
@@ -186,6 +208,33 @@ export const selectPendingChanges = (state: AgentStore) => state.pendingChanges
 export const selectHasPendingChanges = (state: AgentStore) => state.pendingChanges.length > 0
 
 export const selectMessageCheckpoints = (state: AgentStore) => state.messageCheckpoints
+
+// 分支相关 selectors
+const EMPTY_BRANCHES: Branch[] = []
+
+export const selectBranches = (state: AgentStore) => {
+    const threadId = state.currentThreadId
+    if (!threadId) return EMPTY_BRANCHES
+    return state.branches[threadId] || EMPTY_BRANCHES
+}
+
+export const selectActiveBranch = (state: AgentStore) => {
+    const threadId = state.currentThreadId
+    if (!threadId) return null
+    const branchId = state.activeBranchId[threadId]
+    if (!branchId) return null
+    const branches = state.branches[threadId]
+    if (!branches) return null
+    return branches.find(b => b.id === branchId) || null
+}
+
+export const selectIsOnBranch = (state: AgentStore) => {
+    const threadId = state.currentThreadId
+    if (!threadId) return false
+    return state.activeBranchId[threadId] != null
+}
+
+export const selectContextSummary = (state: AgentStore) => state.contextSummary
 
 // ===== StreamingBuffer 初始化 =====
 
