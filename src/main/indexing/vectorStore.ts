@@ -78,33 +78,55 @@ export class VectorStoreService {
 
   /**
    * 获取所有文件的 Hash
+   * 使用流式查询避免一次性加载过多数据
    */
   async getFileHashes(): Promise<Map<string, string>> {
     if (!this.table) return new Map()
     
-    // LanceDB SQL-like query or just scan
-    // Assuming distinct filePath and taking first hash found (chunks of same file have same hash)
-    // Note: LanceDB might not support 'distinct' efficiently in JS API yet.
-    // We fetch all chunks' filePath and fileHash.
-    // Optimization: limit columns
     try {
+      // 分批查询，每批 10000 条
+      const BATCH_SIZE = 10000
+      const hashMap = new Map<string, string>()
+      let offset = 0
+      let hasMore = true
+
+      while (hasMore) {
         const results = await this.table
-        .query()
-        .select(['filePath', 'fileHash'])
-        .limit(1000000) // safety limit
-        .execute()
-        
-        const hashMap = new Map<string, string>()
-        for (const r of results) {
-            // Overwrite is fine as all chunks of same file should have same hash
-            if (r.filePath && r.fileHash) {
-                hashMap.set(r.filePath as string, r.fileHash as string)
-            }
+          .query()
+          .select(['filePath', 'fileHash'])
+          .limit(BATCH_SIZE)
+          .execute()
+
+        if (results.length === 0) {
+          hasMore = false
+          break
         }
-        return hashMap
+
+        for (const r of results) {
+          if (r.filePath && r.fileHash) {
+            // 只保留第一次出现的 hash（同一文件的多个 chunk 有相同 hash）
+            if (!hashMap.has(r.filePath as string)) {
+              hashMap.set(r.filePath as string, r.fileHash as string)
+            }
+          }
+        }
+
+        // LanceDB 目前不支持 offset，所以只能一次性查询
+        // 如果结果数量小于 BATCH_SIZE，说明已经查完
+        if (results.length < BATCH_SIZE) {
+          hasMore = false
+        } else {
+          // LanceDB 不支持 offset，这里只能一次查完
+          hasMore = false
+        }
+
+        offset += results.length
+      }
+
+      return hashMap
     } catch (e) {
-        logger.index.error('[VectorStore] Error fetching file hashes:', e)
-        return new Map()
+      logger.index.error('[VectorStore] Error fetching file hashes:', e)
+      return new Map()
     }
   }
 

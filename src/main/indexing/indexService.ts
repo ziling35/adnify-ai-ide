@@ -350,11 +350,24 @@ let indexServiceInstance: CodebaseIndexService | null = null
 
 /**
  * 获取或创建索引服务实例
+ * 切换工作区时会销毁旧实例，释放 Worker 资源
  */
 export function getIndexService(workspacePath: string): CodebaseIndexService {
-  if (!indexServiceInstance || indexServiceInstance['workspacePath'] !== workspacePath) {
+  // 检查是否需要切换工作区
+  if (indexServiceInstance) {
+    const currentPath = (indexServiceInstance as any).workspacePath as string
+    if (currentPath !== workspacePath) {
+      // 销毁旧实例，释放 Worker 资源
+      logger.index.info(`[IndexService] Switching workspace from ${currentPath} to ${workspacePath}`)
+      indexServiceInstance.destroy()
+      indexServiceInstance = null
+    }
+  }
+
+  if (!indexServiceInstance) {
     indexServiceInstance = new CodebaseIndexService(workspacePath)
   }
+
   return indexServiceInstance
 }
 
@@ -362,5 +375,9 @@ export function getIndexService(workspacePath: string): CodebaseIndexService {
  * 销毁索引服务实例
  */
 export function destroyIndexService(): void {
-  indexServiceInstance = null
+  if (indexServiceInstance) {
+    indexServiceInstance.destroy()
+    indexServiceInstance = null
+    logger.index.info('[IndexService] Instance destroyed')
+  }
 }

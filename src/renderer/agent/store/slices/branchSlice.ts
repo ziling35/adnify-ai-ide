@@ -1,52 +1,62 @@
 /**
  * 对话分支管理 Slice
  * 支持从任意消息点创建分支、切换分支、合并分支
+ * 
+ * 主线消息保存机制：
+ * - 使用特殊的 __mainline__ 分支保存主线消息
+ * - 切换到分支时自动保存主线消息
+ * - 切换回主线时自动恢复主线消息
  */
 
 import type { StateCreator } from 'zustand'
-import type { ChatMessage } from '../../types'
+import type { ChatMessage, MessageContent } from '../../types'
 import type { ThreadSlice } from './threadSlice'
 import type { MessageSlice } from './messageSlice'
+
+// ===== 常量 =====
+
+/** 主线分支的特殊 ID */
+const MAINLINE_BRANCH_ID = '__mainline__'
 
 // ===== 类型定义 =====
 
 export interface Branch {
   id: string
   name: string
-  // 分支起点的消息 ID
+  /** 分支起点的消息 ID */
   forkFromMessageId: string
-  // 分支创建时间
+  /** 分支创建时间 */
   createdAt: number
-  // 分支的消息（从分支点之后的消息）
+  /** 分支的消息（从分支点之后的消息） */
   messages: ChatMessage[]
-  // 是否为当前活动分支
+  /** 是否为当前活动分支 */
   isActive: boolean
 }
 
 export interface BranchState {
-  // 当前线程的分支列表
-  branches: Record<string, Branch[]> // threadId -> branches
-  // 当前活动分支 ID
-  activeBranchId: Record<string, string | null> // threadId -> branchId
+  /** 当前线程的分支列表 threadId -> branches */
+  branches: Record<string, Branch[]>
+  /** 当前活动分支 ID threadId -> branchId */
+  activeBranchId: Record<string, string | null>
 }
 
 export interface BranchActions {
-  // 从指定消息创建分支
+  /** 从指定消息创建分支 */
   createBranch: (messageId: string, name?: string) => string | null
-  // 切换到指定分支
+  /** 切换到指定分支 */
   switchBranch: (branchId: string) => boolean
-  // 切换回主线
+  /** 切换回主线 */
   switchToMainline: () => void
-  // 删除分支
+  /** 删除分支 */
   deleteBranch: (branchId: string) => boolean
-  // 重命名分支
+  /** 重命名分支 */
   renameBranch: (branchId: string, name: string) => boolean
-  // 获取当前线程的所有分支
+  /** 获取当前线程的所有分支（不包含内部的主线分支） */
   getBranches: () => Branch[]
-  // 获取当前活动分支
+  /** 获取当前活动分支 */
   getActiveBranch: () => Branch | null
-  // 从消息重新生成（创建新分支并重新发送）
-  regenerateFromMessage: (messageId: string) => { branchId: string; messageContent: any } | null
+  /** 从消息重新生成（创建新分支并重新发送） */
+  regenerateFromMessage: (messageId: string) => { branchId: string; messageContent: MessageContent } | null
 }
 
 export type BranchSlice = BranchState & BranchActions
@@ -54,6 +64,33 @@ export type BranchSlice = BranchState & BranchActions
 // ===== 辅助函数 =====
 
 const generateId = () => crypto.randomUUID()
+
+/**
+ * 获取或创建主线分支
+ * 用于在切换到其他分支时保存主线消息
+ */
+function getOrCreateMainlineBranch(
+  branches: Branch[],
+  forkFromMessageId: string,
+  messages: ChatMessage[]
+): Branch {
+  const existing = branches.find(b => b.id === MAINLINE_BRANCH_ID)
+  if (existing) {
+    return {
+      ...existing,
+      forkFromMessageId,
+      messages: messages.map(m => ({ ...m })),
+    }
+  }
+  return {
+    id: MAINLINE_BRANCH_ID,
+    name: '__mainline__',
+    forkFromMessageId,
+    createdAt: Date.now(),
+    messages: messages.map(m => ({ ...m })),
+    isActive: false,
+  }
+}
 
 // ===== Slice 创建器 =====
 
@@ -66,7 +103,6 @@ export const createBranchSlice: StateCreator<
   branches: {},
   activeBranchId: {},
 
-  // 创建分支
   createBranch: (messageId, name) => {
     const threadId = get().currentThreadId
     if (!threadId) return null
@@ -74,17 +110,16 @@ export const createBranchSlice: StateCreator<
     const thread = get().threads[threadId]
     if (!thread) return null
 
-    // 找到消息索引
     const messageIndex = thread.messages.findIndex(m => m.id === messageId)
     if (messageIndex === -1) return null
 
     const branchId = generateId()
-    const branchName = name || `Branch ${(get().branches[threadId]?.length || 0) + 1}`
+    const existingBranches = (get().branches[threadId] || []).filter(b => b.id !== MAINLINE_BRANCH_ID)
+    const branchName = name || `Branch ${existingBranches.length + 1}`
 
-    // 复制分支点之后的消息
     const branchMessages = thread.messages.slice(messageIndex + 1).map(m => ({
       ...m,
-      id: generateId(), // 新 ID 避免冲突
+      id: generateId(),
     }))
 
     const newBranch: Branch = {
@@ -106,7 +141,6 @@ export const createBranchSlice: StateCreator<
     return branchId
   },
 
-  // 切换分支
   switchBranch: (branchId) => {
     const threadId = get().currentThreadId
     if (!threadId) return false
@@ -118,21 +152,19 @@ export const createBranchSlice: StateCreator<
     const thread = get().threads[threadId]
     if (!thread) return false
 
-    // 找到分支点
     const forkIndex = thread.messages.findIndex(m => m.id === targetBranch.forkFromMessageId)
     if (forkIndex === -1) return false
 
-    // 保存当前分支的消息（如果有活动分支）
     const currentBranchId = get().activeBranchId[threadId]
-    
+
     set(state => {
       const currentThread = state.threads[threadId]
       if (!currentThread) return state
 
-      // 如果当前有活动分支，保存其消息
       let updatedBranches = [...(state.branches[threadId] || [])]
-      
+
       if (currentBranchId) {
+        // 当前在某个分支上，保存该分支的消息
         const currentBranchIndex = updatedBranches.findIndex(b => b.id === currentBranchId)
         if (currentBranchIndex !== -1) {
           const currentBranch = updatedBranches[currentBranchIndex]
@@ -148,17 +180,27 @@ export const createBranchSlice: StateCreator<
           }
         }
       } else {
-        // 保存主线消息到一个临时分支
-        // （可选：如果需要保存主线状态）
+        // 当前在主线上，保存主线消息到 __mainline__ 分支
+        const mainlineMessages = currentThread.messages.slice(forkIndex + 1)
+        if (mainlineMessages.length > 0) {
+          const mainlineBranch = getOrCreateMainlineBranch(
+            updatedBranches,
+            targetBranch.forkFromMessageId,
+            mainlineMessages
+          )
+          const mainlineIndex = updatedBranches.findIndex(b => b.id === MAINLINE_BRANCH_ID)
+          if (mainlineIndex !== -1) {
+            updatedBranches[mainlineIndex] = mainlineBranch
+          } else {
+            updatedBranches.push(mainlineBranch)
+          }
+        }
       }
 
       // 更新目标分支为活动状态
       const targetIndex = updatedBranches.findIndex(b => b.id === branchId)
       if (targetIndex !== -1) {
-        updatedBranches[targetIndex] = {
-          ...updatedBranches[targetIndex],
-          isActive: true,
-        }
+        updatedBranches[targetIndex] = { ...updatedBranches[targetIndex], isActive: true }
       }
 
       // 替换消息为分支消息
@@ -170,27 +212,16 @@ export const createBranchSlice: StateCreator<
       return {
         threads: {
           ...state.threads,
-          [threadId]: {
-            ...currentThread,
-            messages: newMessages,
-            lastModified: Date.now(),
-          },
+          [threadId]: { ...currentThread, messages: newMessages, lastModified: Date.now() },
         },
-        branches: {
-          ...state.branches,
-          [threadId]: updatedBranches,
-        },
-        activeBranchId: {
-          ...state.activeBranchId,
-          [threadId]: branchId,
-        },
+        branches: { ...state.branches, [threadId]: updatedBranches },
+        activeBranchId: { ...state.activeBranchId, [threadId]: branchId },
       }
     })
 
     return true
   },
 
-  // 切换回主线
   switchToMainline: () => {
     const threadId = get().currentThreadId
     if (!threadId) return
@@ -201,10 +232,10 @@ export const createBranchSlice: StateCreator<
     const thread = get().threads[threadId]
     const branches = get().branches[threadId] || []
     const currentBranch = branches.find(b => b.id === currentBranchId)
+    const mainlineBranch = branches.find(b => b.id === MAINLINE_BRANCH_ID)
 
     if (!thread || !currentBranch) return
 
-    // 找到分支点
     const forkIndex = thread.messages.findIndex(m => m.id === currentBranch.forkFromMessageId)
     if (forkIndex === -1) return
 
@@ -224,35 +255,34 @@ export const createBranchSlice: StateCreator<
         return b
       })
 
-      // 恢复主线消息（只保留到分支点）
-      // 注意：这里简化处理，实际可能需要保存主线的完整状态
-      const newMessages = currentThread.messages.slice(0, forkIndex + 1)
+      // 恢复主线消息
+      let newMessages: ChatMessage[]
+      if (mainlineBranch && mainlineBranch.messages.length > 0) {
+        newMessages = [
+          ...currentThread.messages.slice(0, forkIndex + 1),
+          ...mainlineBranch.messages,
+        ]
+      } else {
+        newMessages = currentThread.messages.slice(0, forkIndex + 1)
+      }
 
       return {
         threads: {
           ...state.threads,
-          [threadId]: {
-            ...currentThread,
-            messages: newMessages,
-            lastModified: Date.now(),
-          },
+          [threadId]: { ...currentThread, messages: newMessages, lastModified: Date.now() },
         },
-        branches: {
-          ...state.branches,
-          [threadId]: updatedBranches,
-        },
-        activeBranchId: {
-          ...state.activeBranchId,
-          [threadId]: null,
-        },
+        branches: { ...state.branches, [threadId]: updatedBranches },
+        activeBranchId: { ...state.activeBranchId, [threadId]: null },
       }
     })
   },
 
-  // 删除分支
   deleteBranch: (branchId) => {
     const threadId = get().currentThreadId
     if (!threadId) return false
+
+    // 不允许删除主线分支
+    if (branchId === MAINLINE_BRANCH_ID) return false
 
     const branches = get().branches[threadId] || []
     if (!branches.find(b => b.id === branchId)) return false
@@ -272,10 +302,12 @@ export const createBranchSlice: StateCreator<
     return true
   },
 
-  // 重命名分支
   renameBranch: (branchId, name) => {
     const threadId = get().currentThreadId
     if (!threadId) return false
+
+    // 不允许重命名主线分支
+    if (branchId === MAINLINE_BRANCH_ID) return false
 
     set(state => ({
       branches: {
@@ -289,14 +321,13 @@ export const createBranchSlice: StateCreator<
     return true
   },
 
-  // 获取分支列表
   getBranches: () => {
     const threadId = get().currentThreadId
     if (!threadId) return []
-    return get().branches[threadId] || []
+    // 过滤掉内部的主线分支
+    return (get().branches[threadId] || []).filter(b => b.id !== MAINLINE_BRANCH_ID)
   },
 
-  // 获取当前活动分支
   getActiveBranch: () => {
     const threadId = get().currentThreadId
     if (!threadId) return null
@@ -308,7 +339,6 @@ export const createBranchSlice: StateCreator<
     return branches.find(b => b.id === branchId) || null
   },
 
-  // 从消息重新生成
   regenerateFromMessage: (messageId) => {
     const threadId = get().currentThreadId
     if (!threadId) return null
@@ -316,7 +346,6 @@ export const createBranchSlice: StateCreator<
     const thread = get().threads[threadId]
     if (!thread) return null
 
-    // 找到消息
     const messageIndex = thread.messages.findIndex(m => m.id === messageId)
     if (messageIndex === -1) return null
 
@@ -325,7 +354,6 @@ export const createBranchSlice: StateCreator<
     // 找到要重新生成的用户消息
     let userMessageIndex = messageIndex
     if (message.role !== 'user') {
-      // 如果点击的是 assistant 消息，找到前一个用户消息
       userMessageIndex = messageIndex - 1
       while (userMessageIndex >= 0 && thread.messages[userMessageIndex].role !== 'user') {
         userMessageIndex--
@@ -334,25 +362,17 @@ export const createBranchSlice: StateCreator<
     }
 
     const userMessage = thread.messages[userMessageIndex]
-    const messageContent = (userMessage as any).content
+    const messageContent = (userMessage as { content: MessageContent }).content
 
-    // 如果是第一条消息，不创建分支，直接返回 null（让调用方使用旧逻辑）
-    if (userMessageIndex === 0) {
-      return null
-    }
+    // 如果是第一条消息，不创建分支
+    if (userMessageIndex === 0) return null
 
-    // 分支点：用户消息（这样分支会包含用户消息之后的 AI 回复）
     const forkMessageId = userMessage.id
-
-    // 获取用户消息之后的所有消息（即 AI 的回复）
     const messagesAfterUser = thread.messages.slice(userMessageIndex + 1)
 
     // 只有当有 AI 回复时才创建分支
-    if (messagesAfterUser.length === 0) {
-      return null
-    }
+    if (messagesAfterUser.length === 0) return null
 
-    // 创建分支保存当前的 AI 回复
     const branchId = generateId()
     const branchName = `Branch: ${new Date().toLocaleTimeString()}`
 
@@ -361,11 +381,10 @@ export const createBranchSlice: StateCreator<
       name: branchName,
       forkFromMessageId: forkMessageId,
       createdAt: Date.now(),
-      messages: messagesAfterUser.map(m => ({ ...m })), // 复制 AI 回复
+      messages: messagesAfterUser.map(m => ({ ...m })),
       isActive: false,
     }
 
-    // 更新状态：添加分支 + 删除主线中用户消息之后的消息
     set(state => {
       const currentThread = state.threads[threadId]
       if (!currentThread) return state
@@ -379,7 +398,6 @@ export const createBranchSlice: StateCreator<
           ...state.threads,
           [threadId]: {
             ...currentThread,
-            // 保留到用户消息（包含用户消息），删除之后的 AI 回复
             messages: currentThread.messages.slice(0, userMessageIndex + 1),
             lastModified: Date.now(),
           },
@@ -387,9 +405,6 @@ export const createBranchSlice: StateCreator<
       }
     })
 
-    return {
-      branchId,
-      messageContent,
-    }
+    return { branchId, messageContent }
   },
 })
