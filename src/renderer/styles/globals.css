@@ -2,6 +2,33 @@
 @tailwind components;
 @tailwind utilities;
 
+/* Nerd Font for file icons */
+@font-face {
+  font-family: 'Symbols Nerd Font';
+  src: url('./fonts/SymbolsNerdFont-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: 'Symbols Nerd Font Mono';
+  src: url('./fonts/SymbolsNerdFontMono-Regular.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* File icon class */
+.nf-icon {
+  font-family: 'Symbols Nerd Font', 'Symbols Nerd Font Mono', monospace;
+  font-style: normal;
+  font-weight: normal;
+  line-height: 1;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
 :root {
   color-scheme: dark;
 

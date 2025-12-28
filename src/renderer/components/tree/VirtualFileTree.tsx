@@ -4,8 +4,6 @@
  */
 import { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import {
-  FolderOpen,
-  File,
   ChevronRight,
   FilePlus,
   FolderPlus,
@@ -23,6 +21,7 @@ import { toast } from '../common/ToastProvider'
 import { Input, ContextMenu, ContextMenuItem } from '../ui'
 import { directoryCacheService } from '@services/directoryCacheService'
 import { keybindingService } from '@services/keybindingService'
+import FileIcon from '../common/FileIcon'
 
 // 每个节点的高度（像素）
 const ITEM_HEIGHT = 28
@@ -43,24 +42,6 @@ interface VirtualFileTreeProps {
   onStartCreate: (path: string, type: 'file' | 'folder') => void
   onCancelCreate: () => void
   onCreateSubmit: (parentPath: string, name: string, type: 'file' | 'folder') => void
-}
-
-// 文件图标颜色
-const getFileIconColor = (name: string) => {
-  const ext = name.split('.').pop()?.toLowerCase()
-  const iconColors: Record<string, string> = {
-    ts: 'text-blue-400',
-    tsx: 'text-blue-400',
-    js: 'text-yellow-400',
-    jsx: 'text-yellow-400',
-    py: 'text-green-400',
-    json: 'text-yellow-300',
-    md: 'text-gray-400',
-    css: 'text-pink-400',
-    html: 'text-orange-400',
-    gitignore: 'text-gray-500',
-  }
-  return iconColors[ext || ''] || 'text-text-muted'
 }
 
 export function VirtualFileTree({
@@ -455,15 +436,15 @@ export function VirtualFileTree({
               <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
             </span>
             {isLoading ? (
-              <div className="w-3.5 h-3.5 border-2 border-text-muted border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              <div className="w-4 h-4 border-2 border-text-muted border-t-transparent rounded-full animate-spin flex-shrink-0" />
             ) : (
-              <FolderOpen className={`w-3.5 h-3.5 flex-shrink-0 ${isExpanded ? 'text-accent' : 'text-text-muted group-hover:text-text-primary'}`} />
+              <FileIcon filename={item.name} isDirectory isOpen={isExpanded} size={16} />
             )}
           </>
         ) : (
           <>
             <span className="w-3.5 flex-shrink-0" />
-            <File className={`w-3.5 h-3.5 flex-shrink-0 ${getFileIconColor(item.name)}`} />
+            <FileIcon filename={item.name} size={16} />
           </>
         )}
 

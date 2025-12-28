@@ -4,9 +4,6 @@
 
 import { useState, useEffect, useRef } from 'react'
 import {
-  Folder,
-  FolderOpen,
-  File,
   ChevronRight,
   Trash2,
   Copy,
@@ -15,13 +12,6 @@ import {
   FilePlus,
   FolderPlus,
   ExternalLink,
-  FileJson,
-  FileCode,
-  FileImage,
-  FileType,
-  FileText,
-  FileTerminal,
-  FileCog,
 } from 'lucide-react'
 import { useStore } from '@store'
 import { FileItem } from '@app-types/electron'
@@ -31,49 +21,7 @@ import { toast } from '../../common/ToastProvider'
 import { directoryCacheService } from '@services/directoryCacheService'
 import { Input, ContextMenu, ContextMenuItem } from '../../ui'
 import { InlineCreateInput } from './InlineCreateInput'
-
-// 获取文件图标的辅助函数
-const getFileIcon = (fileName: string) => {
-  const ext = fileName.split('.').pop()?.toLowerCase()
-  
-  switch (ext) {
-    case 'json':
-      return <FileJson className="w-3.5 h-3.5 text-yellow-400" />
-    case 'ts':
-    case 'tsx':
-      return <FileCode className="w-3.5 h-3.5 text-blue-400" />
-    case 'js':
-    case 'jsx':
-      return <FileCode className="w-3.5 h-3.5 text-yellow-300" />
-    case 'css':
-    case 'scss':
-    case 'less':
-      return <FileType className="w-3.5 h-3.5 text-sky-300" />
-    case 'html':
-      return <FileCode className="w-3.5 h-3.5 text-orange-400" />
-    case 'md':
-    case 'txt':
-      return <FileText className="w-3.5 h-3.5 text-gray-300" />
-    case 'png':
-    case 'jpg':
-    case 'jpeg':
-    case 'gif':
-    case 'svg':
-    case 'ico':
-      return <FileImage className="w-3.5 h-3.5 text-purple-400" />
-    case 'sh':
-    case 'bat':
-    case 'ps1':
-      return <FileTerminal className="w-3.5 h-3.5 text-green-400" />
-    case 'yml':
-    case 'yaml':
-    case 'toml':
-    case 'xml':
-      return <FileCog className="w-3.5 h-3.5 text-red-300" />
-    default:
-      return <File className="w-3.5 h-3.5 text-text-muted" />
-  }
-}
+import FileIcon from '../../common/FileIcon'
 
 interface FileTreeItemProps {
   item: FileItem
@@ -283,21 +231,15 @@ export function FileTreeItem({
               <ChevronRight className="w-3.5 h-3.5 opacity-60 group-hover:opacity-100" />
             </span>
             {isLoading ? (
-              <div className="w-3.5 h-3.5 border-2 border-text-muted border-t-transparent rounded-full animate-spin flex-shrink-0" />
+              <div className="w-4 h-4 border-2 border-text-muted border-t-transparent rounded-full animate-spin flex-shrink-0" />
             ) : (
-              <>
-                {isExpanded ? (
-                  <FolderOpen className="w-3.5 h-3.5 flex-shrink-0 text-accent" />
-                ) : (
-                  <Folder className="w-3.5 h-3.5 flex-shrink-0 text-text-muted group-hover:text-text-primary" />
-                )}
-              </>
+              <FileIcon filename={item.name} isDirectory isOpen={isExpanded} size={16} />
             )}
           </>
         ) : (
           <>
             <span className="w-3.5 flex-shrink-0" />
-            {getFileIcon(item.name)}
+            <FileIcon filename={item.name} size={16} />
           </>
         )}
 
