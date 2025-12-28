@@ -186,7 +186,6 @@ export const useAgentStore = create<AgentStore>()(
             partialize: (state) => ({
                 threads: state.threads,
                 currentThreadId: state.currentThreadId,
-                autoApprove: state.autoApprove,
                 plan: state.plan,
                 branches: state.branches,
                 activeBranchId: state.activeBranchId,

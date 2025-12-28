@@ -1,6 +1,8 @@
 /**
  * 流状态管理 Slice
- * 负责流式响应状态和自动审批配置
+ * 负责流式响应状态管理
+ * 
+ * 注意：自动审批设置已移至 settingsSlice (useStore)
  */
 
 import type { StateCreator } from 'zustand'
@@ -10,17 +12,11 @@ import type { StreamState, ToolCall } from '../../types'
 
 export interface StreamSliceState {
     streamState: StreamState
-    autoApprove: {
-        edits: boolean
-        terminal: boolean
-        dangerous: boolean
-    }
 }
 
 export interface StreamActions {
     setStreamState: (state: Partial<StreamState>) => void
     setStreamPhase: (phase: StreamState['phase'], toolCall?: ToolCall, error?: string) => void
-    setAutoApprove: (type: keyof StreamSliceState['autoApprove'], value: boolean) => void
 }
 
 export type StreamSlice = StreamSliceState & StreamActions
@@ -35,11 +31,6 @@ export const createStreamSlice: StateCreator<
 > = (set) => ({
     // 初始状态
     streamState: { phase: 'idle' },
-    autoApprove: {
-        edits: false,
-        terminal: false,
-        dangerous: false,
-    },
 
     // 设置流状态
     setStreamState: (newState) => {
@@ -51,12 +42,5 @@ export const createStreamSlice: StateCreator<
     // 设置流阶段
     setStreamPhase: (phase, toolCall, error) => {
         set({ streamState: { phase, currentToolCall: toolCall, error } })
-    },
-
-    // 设置自动审批
-    setAutoApprove: (type, value) => {
-        set(state => ({
-            autoApprove: { ...state.autoApprove, [type]: value },
-        }))
     },
 })

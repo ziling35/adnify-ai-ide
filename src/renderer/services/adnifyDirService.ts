@@ -35,11 +35,6 @@ export interface SessionsData {
     state: {
       threads: Record<string, unknown>
       currentThreadId: string | null
-      autoApprove: {
-        edits: boolean
-        terminal: boolean
-        dangerous: boolean
-      }
     }
     version: number
   }

@@ -78,51 +78,31 @@ export class VectorStoreService {
 
   /**
    * 获取所有文件的 Hash
-   * 使用流式查询避免一次性加载过多数据
+   * 只查询 filePath 和 fileHash 字段，减少内存占用
    */
   async getFileHashes(): Promise<Map<string, string>> {
     if (!this.table) return new Map()
     
     try {
-      // 分批查询，每批 10000 条
-      const BATCH_SIZE = 10000
       const hashMap = new Map<string, string>()
-      let offset = 0
-      let hasMore = true
+      
+      // LanceDB 不支持 offset，直接查询所有记录
+      // 只选择需要的字段以减少内存占用
+      const results = await this.table
+        .query()
+        .select(['filePath', 'fileHash'])
+        .execute()
 
-      while (hasMore) {
-        const results = await this.table
-          .query()
-          .select(['filePath', 'fileHash'])
-          .limit(BATCH_SIZE)
-          .execute()
-
-        if (results.length === 0) {
-          hasMore = false
-          break
-        }
-
-        for (const r of results) {
-          if (r.filePath && r.fileHash) {
-            // 只保留第一次出现的 hash（同一文件的多个 chunk 有相同 hash）
-            if (!hashMap.has(r.filePath as string)) {
-              hashMap.set(r.filePath as string, r.fileHash as string)
-            }
+      for (const r of results) {
+        if (r.filePath && r.fileHash) {
+          // 只保留第一次出现的 hash（同一文件的多个 chunk 有相同 hash）
+          if (!hashMap.has(r.filePath as string)) {
+            hashMap.set(r.filePath as string, r.fileHash as string)
           }
         }
-
-        // LanceDB 目前不支持 offset，所以只能一次性查询
-        // 如果结果数量小于 BATCH_SIZE，说明已经查完
-        if (results.length < BATCH_SIZE) {
-          hasMore = false
-        } else {
-          // LanceDB 不支持 offset，这里只能一次查完
-          hasMore = false
-        }
-
-        offset += results.length
       }
 
+      logger.index.info(`[VectorStore] Loaded ${hashMap.size} file hashes`)
       return hashMap
     } catch (e) {
       logger.index.error('[VectorStore] Error fetching file hashes:', e)
