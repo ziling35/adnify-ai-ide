@@ -15,7 +15,7 @@ const path = require('path')
 
 const GITHUB_REPO = 'adnaan-worker/adnify'
 const GITEE_RELEASE_URL = 'https://gitee.com/adnaan/adnify/releases/new'
-const GITHUB_TOKEN = "87787"
+const GITHUB_TOKEN = "999"
 
 const version = process.argv[2]
 if (!version) {
