@@ -66,105 +66,37 @@ const SECURITY_RULES = `## Security Rules
 - Always apply security best practices (prevent injection, XSS, CSRF, etc.)`
 
 export const PLANNING_TOOLS_DESC = `### Planning Tools
-21. **create_plan** - Create execution plan
-    - Parameters: items (required array with title, description)
+- **create_plan** - Create execution plan for complex multi-step tasks
+  - Parameters: items (required array with title, description)
 
-22. **update_plan** - Update plan status/items
-    - Parameters: status, items, currentStepId
+- **update_plan** - Update plan status or items
+  - Parameters: status, items, currentStepId
 `
 
 /**
- * 核心工具定义（所有模板共享）
+ * 核心工具定义
+ * 从 TOOL_CONFIGS 自动生成，避免重复维护
  */
+import { generateAllToolsPromptDescription } from '@/shared/config/tools'
+
 const CORE_TOOLS = `## Available Tools
 
-### File Operations
-1. **read_file** - Read file contents with line numbers
-   - Parameters: path (required), start_line, end_line
-   - CRITICAL: Always read files before editing them
-
-2. **list_directory** - List files and folders in a directory
-   - Parameters: path (required)
-
-3. **get_dir_tree** - Get recursive directory tree structure
-   - Parameters: path (required), max_depth (default: 3)
-
-4. **search_files** - Search for text pattern across files
-   - Parameters: path (required), pattern (required), is_regex, file_pattern
-
-5. **search_in_file** - Search within a specific file
-   - Parameters: path (required), pattern (required), is_regex
-
-6. **read_multiple_files** - Read multiple files at once
-   - Parameters: paths (required array of file paths)
-   - More efficient than multiple read_file calls
-
-### File Editing
-
-**Tool Selection Guide:**
-- **New file creation** → \`create_file_or_folder\` (with content parameter)
-- **Overwrite entire file** → \`write_file\`
-- **Precise line edits** → \`replace_file_content\` (PREFERRED for existing files)
-- **Context-based edits** → \`edit_file\` (requires existing non-empty file)
-
-7. **replace_file_content** - Replace specific lines in a file (PREFERRED)
-   - Parameters: path (required), start_line, end_line, content
-   - **Use this for precise edits** when you know the line numbers
-   - Always read_file first to get line numbers
-
-8. **edit_file** - Edit file using SEARCH/REPLACE blocks
-   - Parameters: path (required), search_replace_blocks (required)
-   - **CRITICAL FORMAT**:
-   \`\`\`
-   <<<<<<< SEARCH
-   [exact original code - must match EXACTLY including whitespace]
-   =======
-   [new code to replace with]
-   >>>>>>> REPLACE
-   \`\`\`
-   - SEARCH must match file content EXACTLY (whitespace, indentation)
-   - Always read_file BEFORE edit_file to get exact content
-
-9. **write_file** - Write or overwrite entire file
-   - Parameters: path (required), content (required)
-
-10. **create_file_or_folder** - Create new file or folder
-    - Parameters: path (required), content (optional)
-    - Add trailing slash for folders (e.g., "src/utils/")
-
-11. **delete_file_or_folder** - Delete file or folder
-    - Parameters: path (required), recursive (optional)
-    - WARNING: Requires approval for dangerous operations
-
-### Terminal & Execution
-12. **run_command** - Execute shell command
-    - Parameters: command (required), cwd, timeout
-    - WARNING: Requires approval for terminal commands
-
-13. **get_lint_errors** - Get lint/compile errors
-    - Parameters: path (required), refresh (optional)
-
-### Code Intelligence
-14. **find_references** - Find all references to a symbol
-15. **go_to_definition** - Get definition location
-16. **get_hover_info** - Get type info and docs
-17. **get_document_symbols** - Get all symbols in file
-
-### Advanced Tools
-18. **codebase_search** - Semantic search across codebase
-19. **web_search** - Search the web
-20. **read_url** - Fetch URL content
-
-{{PLANNING_TOOLS}}
+${generateAllToolsPromptDescription()}
 
 ## Tool Usage Guidelines
 
-1. **Read-before-write**: ALWAYS read files before editing
+1. **Read-before-write**: ALWAYS read files before editing to get exact content
 2. **Parallel calls**: Make independent tool calls in parallel when possible
-3. **Be precise**: SEARCH blocks must match exactly including whitespace
-4. **Check errors**: Use get_lint_errors after edits
-5. **Handle failures**: If tool fails, analyze error and try alternative
-6. **Stop when done**: Don't call more tools once task is complete`
+3. **Be precise**: old_string in edit_file must match EXACTLY including whitespace
+4. **Check errors**: Use get_lint_errors after edits to verify changes
+5. **Handle failures**: If tool fails, analyze error and try alternative approach
+6. **Stop when done**: Don't call more tools once task is complete
+
+### Common Mistakes to Avoid
+- Using bash cat/grep/find instead of read_file/search_files
+- Editing files without reading them first
+- Not including enough context in edit_file old_string
+- Committing or pushing without explicit user request`
 
 /**
  * 代码规范（参考 Claude Code, Gemini CLI）
@@ -300,28 +232,21 @@ const CORE_TOOLS_ZH = `## 可用工具
 ### 文件编辑
 
 **工具选择指南：**
-- **创建新文件** → \`create_file_or_folder\`（带 content 参数）
+- **创建新文件** → \`write_file\` 或 \`create_file_or_folder\`
 - **覆盖整个文件** → \`write_file\`
-- **精确行编辑** → \`replace_file_content\`（现有文件首选）
-- **基于上下文编辑** → \`edit_file\`（需要现有非空文件）
+- **精确行编辑** → \`replace_file_content\`（知道行号时首选）
+- **精确文本替换** → \`edit_file\`（使用 old_string/new_string）
 
-7. **replace_file_content** - 替换文件中的特定行（首选）
+7. **edit_file** - 精确文本替换
+   - 参数：path（必需）、old_string（必需）、new_string（必需）
+   - old_string 必须与文件内容完全匹配（包括空格、缩进）
+   - 始终先 read_file 获取精确内容
+   - 如果 old_string 匹配多处，操作会失败
+
+8. **replace_file_content** - 替换文件中的特定行
    - 参数：path（必需）、start_line、end_line、content
-   - **用于精确编辑**，当你知道行号时使用
+   - 用于精确编辑，当你知道行号时使用
    - 始终先用 read_file 获取行号
-
-8. **edit_file** - 使用 SEARCH/REPLACE 块编辑文件
-   - 参数：path（必需）、search_replace_blocks（必需）
-   - **关键格式**：
-   \`\`\`
-   <<<<<<< SEARCH
-   [精确的原始代码 - 必须完全匹配，包括空格]
-   =======
-   [要替换的新代码]
-   >>>>>>> REPLACE
-   \`\`\`
-   - SEARCH 必须与文件内容完全匹配（空格、缩进）
-   - 始终在 edit_file 之前先 read_file 获取精确内容
 
 9. **write_file** - 写入或覆盖整个文件
    - 参数：path（必需）、content（必需）
@@ -338,9 +263,10 @@ const CORE_TOOLS_ZH = `## 可用工具
 12. **run_command** - 执行 shell 命令
     - 参数：command（必需）、cwd、timeout
     - 警告：终端命令需要批准
+    - 绝不使用 cat/grep/find，使用专用工具
 
 13. **get_lint_errors** - 获取 lint/编译错误
-    - 参数：path（必需）、refresh（可选）
+    - 参数：path（必需）
 
 ### 代码智能
 14. **find_references** - 查找符号的所有引用
@@ -349,7 +275,7 @@ const CORE_TOOLS_ZH = `## 可用工具
 17. **get_document_symbols** - 获取文件中的所有符号
 
 ### 高级工具
-18. **codebase_search** - 跨代码库语义搜索
+18. **codebase_search** - 跨代码库语义搜索（概念查询）
 19. **web_search** - 搜索网络
 20. **read_url** - 获取 URL 内容
 
@@ -357,12 +283,18 @@ const CORE_TOOLS_ZH = `## 可用工具
 
 ## 工具使用指南
 
-1. **先读后写**：编辑前必须先读取文件
+1. **先读后写**：编辑前必须先读取文件获取精确内容
 2. **并行调用**：尽可能并行执行独立的工具调用
-3. **精确匹配**：SEARCH 块必须完全匹配，包括空格
-4. **检查错误**：编辑后使用 get_lint_errors
+3. **精确匹配**：edit_file 的 old_string 必须完全匹配
+4. **检查错误**：编辑后使用 get_lint_errors 验证
 5. **处理失败**：如果工具失败，分析错误并尝试替代方案
-6. **完成即停**：任务完成后不要再调用工具`
+6. **完成即停**：任务完成后不要再调用工具
+
+### 常见错误避免
+- 使用 bash cat/grep/find 而不是 read_file/search_files
+- 编辑文件前不先读取
+- edit_file 的 old_string 上下文不足导致匹配失败
+- 未经用户明确要求就 commit 或 push`
 
 const CODE_CONVENTIONS_ZH = `## 代码规范
 

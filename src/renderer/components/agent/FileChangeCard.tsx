@@ -96,7 +96,7 @@ export default function FileChangeCard({
         }
         if (meta?.newContent) return meta.newContent as string
         // Fallback: 从 args 中获取
-        return (args.content || args.code || args.search_replace_blocks || args.replacement || args.source) as string || ''
+        return (args.content || args.code || args.new_string || args.replacement || args.source) as string || ''
     }, [args, meta, streamingContent, isRunning, isStreaming])
 
     // 计算行数变化 - 优先使用工具返回的准确统计

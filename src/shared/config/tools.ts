@@ -1,7 +1,9 @@
 /**
  * 工具统一配置
  * 
- * 单一数据源：所有工具的定义、schema、元数据都从这里生成
+ * 设计参考：Claude Code CLI, Codex CLI, Kiro
+ * 
+ * 单一数据源：所有工具的定义、schema、元数据、提示词描述都从这里生成
  * 添加新工具只需在 TOOL_CONFIGS 中添加一项
  */
 
@@ -27,7 +29,16 @@ export interface ToolPropertyDef {
 export interface ToolConfig {
     name: string
     displayName: string
+    /** 简短描述（用于 LLM 工具定义） */
     description: string
+    /** 详细描述（用于系统提示词） */
+    detailedDescription?: string
+    /** 使用示例 */
+    examples?: string[]
+    /** 重要提示（CRITICAL/IMPORTANT 级别的规则） */
+    criticalRules?: string[]
+    /** 常见错误及解决方案 */
+    commonErrors?: Array<{ error: string; solution: string }>
     category: ToolCategory
     approvalType: ToolApprovalType
     parallel: boolean
@@ -49,16 +60,29 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
     read_file: {
         name: 'read_file',
         displayName: 'Read File',
-        description: 'Read file contents with optional line range.',
+        description: 'Read file contents with line numbers. ALWAYS read files before editing.',
+        detailedDescription: `Read file contents from the filesystem with line numbers (1-indexed).
+- Returns content in "line_number | content" format for easy reference
+- Default: reads entire file; use start_line/end_line for large files
+- Supports text files, code files, and configuration files
+- For images/PDFs, use appropriate viewer tools instead`,
+        examples: [
+            'read_file path="src/main.ts" → Read entire file',
+            'read_file path="src/main.ts" start_line=10 end_line=50 → Read lines 10-50',
+        ],
+        criticalRules: [
+            'ALWAYS read a file before editing it to understand context and get exact content',
+            'Use line numbers from read output when using replace_file_content',
+        ],
         category: 'read',
         approvalType: 'none',
         parallel: true,
         requiresWorkspace: true,
         enabled: true,
         parameters: {
-            path: { type: 'string', description: 'File path', required: true },
-            start_line: { type: 'number', description: 'Starting line (1-indexed)' },
-            end_line: { type: 'number', description: 'Ending line' },
+            path: { type: 'string', description: 'File path (relative to workspace)', required: true },
+            start_line: { type: 'number', description: 'Starting line number (1-indexed, optional)' },
+            end_line: { type: 'number', description: 'Ending line number (inclusive, optional)' },
         },
         validate: (data) => {
             if (data.start_line && data.end_line && (data.start_line as number) > (data.end_line as number)) {
@@ -68,24 +92,56 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
         },
     },
 
-    list_directory: {
-        name: 'list_directory',
-        displayName: 'List Directory',
-        description: 'List files and folders in a directory.',
+    read_multiple_files: {
+        name: 'read_multiple_files',
+        displayName: 'Read Multiple Files',
+        description: 'Read multiple files at once. More efficient than multiple read_file calls.',
+        detailedDescription: `Read multiple files in a single call for better efficiency.
+- Use when you need to read 2+ related files
+- Returns all file contents with clear separators
+- Parallel execution internally for speed`,
+        examples: [
+            'read_multiple_files paths=["src/types.ts", "src/utils.ts", "src/index.ts"]',
+        ],
+        criticalRules: [
+            'Prefer this over multiple read_file calls when reading related files',
+        ],
         category: 'read',
         approvalType: 'none',
         parallel: true,
         requiresWorkspace: true,
         enabled: true,
         parameters: {
-            path: { type: 'string', description: 'Directory path', required: true },
+            paths: { type: 'array', description: 'Array of file paths to read', required: true, items: { type: 'string', description: 'File path' } },
+        },
+    },
+
+    list_directory: {
+        name: 'list_directory',
+        displayName: 'List Directory',
+        description: 'List files and folders in a directory with metadata.',
+        detailedDescription: `List directory contents with file types and sizes.
+- Shows files and subdirectories
+- Includes file size and modification info
+- Use for exploring project structure`,
+        category: 'read',
+        approvalType: 'none',
+        parallel: true,
+        requiresWorkspace: true,
+        enabled: true,
+        parameters: {
+            path: { type: 'string', description: 'Directory path (use "." for workspace root)', required: true },
         },
     },
 
     get_dir_tree: {
         name: 'get_dir_tree',
         displayName: 'Directory Tree',
-        description: 'Get recursive directory tree structure.',
+        description: 'Get recursive directory tree structure for project overview.',
+        detailedDescription: `Get a tree view of directory structure.
+- Recursive listing up to max_depth
+- Useful for understanding project layout
+- Respects .gitignore patterns`,
         category: 'read',
         approvalType: 'none',
         parallel: true,
@@ -97,20 +153,35 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
         },
     },
 
+    // ===== 搜索工具 =====
     search_files: {
         name: 'search_files',
         displayName: 'Search Files',
-        description: 'Search for text pattern in files.',
+        description: 'Search for text/regex pattern across files in a directory.',
+        detailedDescription: `Fast content search using ripgrep-style matching.
+- Searches file contents for pattern matches
+- Supports regex patterns with is_regex=true
+- Filter by file type with file_pattern (e.g., "*.ts")
+- Returns matching lines with context`,
+        examples: [
+            'search_files path="src" pattern="TODO" → Find all TODOs',
+            'search_files path="." pattern="function\\s+\\w+" is_regex=true → Find function declarations',
+            'search_files path="src" pattern="import" file_pattern="*.tsx" → Search only TSX files',
+        ],
+        criticalRules: [
+            'Use this instead of bash grep/find commands',
+            'For searching within a single file, use search_in_file instead',
+        ],
         category: 'search',
         approvalType: 'none',
         parallel: true,
         requiresWorkspace: true,
         enabled: true,
         parameters: {
-            path: { type: 'string', description: 'Directory to search', required: true },
-            pattern: { type: 'string', description: 'Search pattern', required: true },
-            is_regex: { type: 'boolean', description: 'Use regex', default: false },
-            file_pattern: { type: 'string', description: 'File filter (e.g., "*.ts")' },
+            path: { type: 'string', description: 'Directory to search in', required: true },
+            pattern: { type: 'string', description: 'Search pattern (text or regex)', required: true },
+            is_regex: { type: 'boolean', description: 'Treat pattern as regex (default: false)', default: false },
+            file_pattern: { type: 'string', description: 'Glob pattern to filter files (e.g., "*.ts", "*.{js,jsx}")' },
         },
     },
 
@@ -118,6 +189,10 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
         name: 'search_in_file',
         displayName: 'Search in File',
         description: 'Search for pattern within a specific file.',
+        detailedDescription: `Search within a single file for pattern matches.
+- Returns all matching lines with line numbers
+- Useful for finding specific code in a known file
+- Supports regex patterns`,
         category: 'search',
         approvalType: 'none',
         parallel: true,
@@ -130,140 +205,22 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
         },
     },
 
-    read_multiple_files: {
-        name: 'read_multiple_files',
-        displayName: 'Read Multiple Files',
-        description: 'Read multiple files at once.',
-        category: 'read',
-        approvalType: 'none',
-        parallel: true,
-        requiresWorkspace: true,
-        enabled: true,
-        parameters: {
-            paths: { type: 'array', description: 'Array of file paths to read', required: true, items: { type: 'string', description: 'File path' } },
-        },
-    },
-
-    // ===== 编辑类工具 =====
-    edit_file: {
-        name: 'edit_file',
-        displayName: 'Edit File',
-        description: 'Edit file using SEARCH/REPLACE blocks. Format: <<<<<<< SEARCH\\nold\\n=======\\nnew\\n>>>>>>> REPLACE',
-        category: 'write',
-        approvalType: 'none',
-        parallel: false,
-        requiresWorkspace: true,
-        enabled: true,
-        parameters: {
-            path: { type: 'string', description: 'File path', required: true },
-            search_replace_blocks: { type: 'string', description: 'SEARCH/REPLACE blocks', required: true },
-        },
-    },
-
-    write_file: {
-        name: 'write_file',
-        displayName: 'Write File',
-        description: 'Write or overwrite entire file content.',
-        category: 'write',
-        approvalType: 'none',
-        parallel: false,
-        requiresWorkspace: true,
-        enabled: true,
-        parameters: {
-            path: { type: 'string', description: 'File path', required: true },
-            content: { type: 'string', description: 'File content', required: true },
-        },
-    },
-
-    replace_file_content: {
-        name: 'replace_file_content',
-        displayName: 'Replace Content',
-        description: 'Replace a specific range of lines in a file.',
-        category: 'write',
-        approvalType: 'none',
-        parallel: false,
-        requiresWorkspace: true,
-        enabled: true,
-        parameters: {
-            path: { type: 'string', description: 'File path', required: true },
-            start_line: { type: 'number', description: 'Start line (1-indexed)', required: true },
-            end_line: { type: 'number', description: 'End line (inclusive)', required: true },
-            content: { type: 'string', description: 'New content', required: true },
-        },
-        validate: (data) => {
-            if ((data.start_line as number) > (data.end_line as number)) {
-                return { valid: false, error: 'start_line must be <= end_line' }
-            }
-            return { valid: true }
-        },
-    },
-
-    create_file_or_folder: {
-        name: 'create_file_or_folder',
-        displayName: 'Create',
-        description: 'Create a new file or folder. Path ending with / creates folder.',
-        category: 'write',
-        approvalType: 'none',
-        parallel: false,
-        requiresWorkspace: true,
-        enabled: true,
-        parameters: {
-            path: { type: 'string', description: 'Path (end with / for folder)', required: true },
-            content: { type: 'string', description: 'Initial content for files' },
-        },
-    },
-
-    delete_file_or_folder: {
-        name: 'delete_file_or_folder',
-        displayName: 'Delete',
-        description: 'Delete a file or folder.',
-        category: 'write',
-        approvalType: 'dangerous',
-        parallel: false,
-        requiresWorkspace: true,
-        enabled: true,
-        parameters: {
-            path: { type: 'string', description: 'Path to delete', required: true },
-            recursive: { type: 'boolean', description: 'Delete recursively', default: false },
-        },
-    },
-
-    // ===== 终端工具 =====
-    run_command: {
-        name: 'run_command',
-        displayName: 'Run Command',
-        description: 'Execute a shell command.',
-        category: 'terminal',
-        approvalType: 'terminal',
-        parallel: false,
-        requiresWorkspace: false,
-        enabled: true,
-        parameters: {
-            command: { type: 'string', description: 'Shell command', required: true },
-            cwd: { type: 'string', description: 'Working directory' },
-            timeout: { type: 'number', description: 'Timeout in seconds (default: 30)', default: 30 },
-        },
-    },
-
-    get_lint_errors: {
-        name: 'get_lint_errors',
-        displayName: 'Lint Errors',
-        description: 'Get lint/compile errors for a file.',
-        category: 'lsp',
-        approvalType: 'none',
-        parallel: true,
-        requiresWorkspace: true,
-        enabled: true,
-        parameters: {
-            path: { type: 'string', description: 'File path', required: true },
-        },
-    },
-
-    // ===== 搜索工具 =====
     codebase_search: {
         name: 'codebase_search',
         displayName: 'Semantic Search',
-        description: 'Semantic search across the codebase using AI embeddings.',
+        description: 'Semantic search across codebase using AI embeddings. Best for conceptual queries.',
+        detailedDescription: `AI-powered semantic search for finding related code.
+- Understands natural language queries
+- Finds conceptually related code, not just text matches
+- Best for: "where is authentication handled?", "find error handling code"`,
+        examples: [
+            'codebase_search query="user authentication logic"',
+            'codebase_search query="database connection setup"',
+        ],
+        criticalRules: [
+            'Use for conceptual/semantic queries, not exact text matches',
+            'For exact text search, use search_files instead',
+        ],
         category: 'search',
         approvalType: 'none',
         parallel: true,
@@ -275,11 +232,212 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
         },
     },
 
+    // ===== 编辑类工具 =====
+    edit_file: {
+        name: 'edit_file',
+        displayName: 'Edit File',
+        description: 'Edit file by replacing exact text. old_string must match file content EXACTLY.',
+        detailedDescription: `Precise string replacement in files.
+- old_string must match file content EXACTLY (including whitespace, indentation)
+- new_string replaces the matched content
+- Use for surgical edits when you know the exact text to change
+- ALWAYS read the file first to get exact content`,
+        examples: [
+            `edit_file path="src/utils.ts" old_string="function add(a, b) {\\n  return a + b;\\n}" new_string="function add(a: number, b: number): number {\\n  return a + b;\\n}"`,
+        ],
+        criticalRules: [
+            'ALWAYS read_file BEFORE edit_file to get exact content',
+            'old_string must match EXACTLY including all whitespace and indentation',
+            'Include enough context (3-5 lines) to ensure unique match',
+            'If old_string matches multiple locations, the edit will FAIL',
+            'For new files, use write_file instead',
+            'For line-based edits, use replace_file_content instead',
+        ],
+        commonErrors: [
+            { error: 'old_string not found', solution: 'Read the file again and copy exact content including whitespace' },
+            { error: 'Multiple matches found', solution: 'Include more surrounding context to make old_string unique' },
+            { error: 'Whitespace mismatch', solution: 'Ensure tabs/spaces match exactly - copy from read_file output' },
+        ],
+        category: 'write',
+        approvalType: 'none',
+        parallel: false,
+        requiresWorkspace: true,
+        enabled: true,
+        parameters: {
+            path: { type: 'string', description: 'File path', required: true },
+            old_string: { type: 'string', description: 'Exact text to find and replace (must be unique in file)', required: true },
+            new_string: { type: 'string', description: 'New text to replace with', required: true },
+        },
+    },
+
+    replace_file_content: {
+        name: 'replace_file_content',
+        displayName: 'Replace Lines',
+        description: 'Replace specific line range in a file. Use line numbers from read_file.',
+        detailedDescription: `Replace a range of lines with new content.
+- Use line numbers from read_file output
+- Replaces lines start_line through end_line (inclusive)
+- Best for: replacing function bodies, updating config sections`,
+        examples: [
+            'replace_file_content path="src/config.ts" start_line=10 end_line=15 content="export const config = {\\n  debug: true\\n};"',
+        ],
+        criticalRules: [
+            'ALWAYS read_file first to get accurate line numbers',
+            'Line numbers are 1-indexed (first line is 1)',
+            'Both start_line and end_line are inclusive',
+        ],
+        category: 'write',
+        approvalType: 'none',
+        parallel: false,
+        requiresWorkspace: true,
+        enabled: true,
+        parameters: {
+            path: { type: 'string', description: 'File path', required: true },
+            start_line: { type: 'number', description: 'Start line number (1-indexed)', required: true },
+            end_line: { type: 'number', description: 'End line number (inclusive)', required: true },
+            content: { type: 'string', description: 'New content to insert', required: true },
+        },
+        validate: (data) => {
+            if ((data.start_line as number) > (data.end_line as number)) {
+                return { valid: false, error: 'start_line must be <= end_line' }
+            }
+            return { valid: true }
+        },
+    },
+
+    write_file: {
+        name: 'write_file',
+        displayName: 'Write File',
+        description: 'Create new file or overwrite entire file. Use for new files or complete rewrites.',
+        detailedDescription: `Write complete file content.
+- Creates new file if it doesn't exist
+- OVERWRITES entire file if it exists
+- Use for: new files, complete file rewrites, generated code`,
+        criticalRules: [
+            'This OVERWRITES the entire file - use edit_file for partial changes',
+            'For existing files, prefer edit_file or replace_file_content',
+            'Do not create documentation files unless explicitly requested',
+        ],
+        category: 'write',
+        approvalType: 'none',
+        parallel: false,
+        requiresWorkspace: true,
+        enabled: true,
+        parameters: {
+            path: { type: 'string', description: 'File path', required: true },
+            content: { type: 'string', description: 'Complete file content', required: true },
+        },
+    },
+
+    create_file_or_folder: {
+        name: 'create_file_or_folder',
+        displayName: 'Create',
+        description: 'Create new file or folder. Path ending with / creates folder.',
+        detailedDescription: `Create new files or directories.
+- Path ending with "/" creates a folder
+- Path without "/" creates a file
+- Can include initial content for files`,
+        examples: [
+            'create_file_or_folder path="src/utils/" → Create folder',
+            'create_file_or_folder path="src/config.ts" content="export default {}" → Create file with content',
+        ],
+        category: 'write',
+        approvalType: 'none',
+        parallel: false,
+        requiresWorkspace: true,
+        enabled: true,
+        parameters: {
+            path: { type: 'string', description: 'Path (end with / for folder)', required: true },
+            content: { type: 'string', description: 'Initial content for files (optional)' },
+        },
+    },
+
+    delete_file_or_folder: {
+        name: 'delete_file_or_folder',
+        displayName: 'Delete',
+        description: 'Delete a file or folder. Requires approval for safety.',
+        detailedDescription: `Delete files or directories.
+- Requires user approval (dangerous operation)
+- Use recursive=true for non-empty folders
+- Cannot be undone`,
+        criticalRules: [
+            'This is a DESTRUCTIVE operation - requires user approval',
+            'Double-check the path before deleting',
+        ],
+        category: 'write',
+        approvalType: 'dangerous',
+        parallel: false,
+        requiresWorkspace: true,
+        enabled: true,
+        parameters: {
+            path: { type: 'string', description: 'Path to delete', required: true },
+            recursive: { type: 'boolean', description: 'Delete folder contents recursively', default: false },
+        },
+    },
+
+    // ===== 终端工具 =====
+    run_command: {
+        name: 'run_command',
+        displayName: 'Run Command',
+        description: 'Execute shell command. Requires approval. Do NOT use for file reading.',
+        detailedDescription: `Execute shell commands in the workspace.
+- Requires user approval for safety
+- Use for: npm/yarn commands, git operations, build scripts, tests
+- Do NOT use for: reading files (use read_file), searching (use search_files)`,
+        examples: [
+            'run_command command="npm install"',
+            'run_command command="npm run build"',
+            'run_command command="git status"',
+        ],
+        criticalRules: [
+            'NEVER use cat/head/tail to read files - use read_file instead',
+            'NEVER use grep/find to search - use search_files instead',
+            'NEVER run destructive git commands (push --force, reset --hard) without explicit request',
+            'NEVER commit or push unless explicitly asked',
+            'Avoid cd commands - use cwd parameter instead',
+        ],
+        category: 'terminal',
+        approvalType: 'terminal',
+        parallel: false,
+        requiresWorkspace: false,
+        enabled: true,
+        parameters: {
+            command: { type: 'string', description: 'Shell command to execute', required: true },
+            cwd: { type: 'string', description: 'Working directory (optional, defaults to workspace)' },
+            timeout: { type: 'number', description: 'Timeout in seconds (default: 30)', default: 30 },
+        },
+    },
+
     // ===== LSP 工具 =====
+    get_lint_errors: {
+        name: 'get_lint_errors',
+        displayName: 'Lint Errors',
+        description: 'Get lint/compile errors for a file. Use after editing to verify changes.',
+        detailedDescription: `Get diagnostics (errors, warnings) for a file.
+- Shows TypeScript/ESLint errors
+- Use after editing to verify code is valid
+- Helps catch issues before running`,
+        criticalRules: [
+            'Run this after editing files to catch errors early',
+        ],
+        category: 'lsp',
+        approvalType: 'none',
+        parallel: true,
+        requiresWorkspace: true,
+        enabled: true,
+        parameters: {
+            path: { type: 'string', description: 'File path to check', required: true },
+        },
+    },
+
     find_references: {
         name: 'find_references',
         displayName: 'Find References',
-        description: 'Find all references to a symbol.',
+        description: 'Find all references to a symbol at given position.',
+        detailedDescription: `Find all usages of a symbol across the codebase.
+- Requires exact file position (line, column)
+- Returns all files/locations that reference the symbol
+- Useful for refactoring and understanding code usage`,
         category: 'lsp',
         approvalType: 'none',
         parallel: true,
@@ -327,7 +485,11 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
     get_document_symbols: {
         name: 'get_document_symbols',
         displayName: 'Document Symbols',
-        description: 'Get all symbols in a file.',
+        description: 'Get all symbols (functions, classes, variables) in a file.',
+        detailedDescription: `List all symbols defined in a file.
+- Shows functions, classes, interfaces, variables
+- Useful for understanding file structure
+- Returns symbol names, types, and locations`,
         category: 'lsp',
         approvalType: 'none',
         parallel: true,
@@ -373,7 +535,11 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
     create_plan: {
         name: 'create_plan',
         displayName: 'Create Plan',
-        description: 'Create a new execution plan with steps.',
+        description: 'Create execution plan for complex multi-step tasks.',
+        detailedDescription: `Create a structured plan for complex tasks.
+- Break down task into logical steps
+- Each step should be verifiable
+- Use for tasks requiring multiple tool calls`,
         category: 'plan',
         approvalType: 'none',
         parallel: false,
@@ -388,8 +554,8 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
                     type: 'object',
                     description: 'Plan item',
                     properties: {
-                        title: { type: 'string', description: 'Item title', required: true },
-                        description: { type: 'string', description: 'Item description' },
+                        title: { type: 'string', description: 'Step title', required: true },
+                        description: { type: 'string', description: 'Step description' },
                     },
                 },
             },
@@ -399,7 +565,7 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
     update_plan: {
         name: 'update_plan',
         displayName: 'Update Plan',
-        description: 'Update the current plan status or items.',
+        description: 'Update plan status or items.',
         category: 'plan',
         approvalType: 'none',
         parallel: false,
@@ -417,22 +583,34 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
     uiux_search: {
         name: 'uiux_search',
         displayName: 'UI/UX Search',
-        description: 'Search UI/UX design database for styles, colors, typography, charts, landing page patterns, product recommendations, and UX best practices. Use this tool when working on UI/UX design tasks.',
+        description: 'Search UI/UX design database for styles, colors, typography, and best practices.',
+        detailedDescription: `Search the design knowledge base for:
+- UI styles (glassmorphism, minimalism, etc.)
+- Color palettes for different industries
+- Typography and font pairings
+- Chart recommendations
+- Landing page patterns
+- UX best practices`,
+        examples: [
+            'uiux_search query="glassmorphism" domain="style"',
+            'uiux_search query="saas dashboard" domain="color"',
+            'uiux_search query="elegant font" domain="typography"',
+        ],
         category: 'search',
         approvalType: 'none',
         parallel: true,
         requiresWorkspace: false,
         enabled: true,
         parameters: {
-            query: { type: 'string', description: 'Search keywords (e.g., "glassmorphism", "saas dashboard", "elegant font")', required: true },
-            domain: { 
-                type: 'string', 
-                description: 'Search domain. Auto-detected if not specified.',
+            query: { type: 'string', description: 'Search keywords', required: true },
+            domain: {
+                type: 'string',
+                description: 'Search domain (auto-detected if not specified)',
                 enum: ['style', 'color', 'typography', 'chart', 'landing', 'product', 'ux', 'prompt'],
             },
             stack: {
                 type: 'string',
-                description: 'Tech stack for stack-specific guidelines (use instead of domain)',
+                description: 'Tech stack for stack-specific guidelines',
                 enum: ['html-tailwind', 'react', 'nextjs', 'vue', 'svelte', 'swiftui', 'react-native', 'flutter'],
             },
             max_results: { type: 'number', description: 'Maximum results (default: 3)', default: 3 },
@@ -440,6 +618,62 @@ export const TOOL_CONFIGS: Record<string, ToolConfig> = {
     },
 }
 
+
+// ============================================
+// 工具选择决策指南
+// ============================================
+
+/**
+ * 文件编辑工具选择决策树
+ * 根据场景选择最合适的工具
+ */
+export const FILE_EDIT_DECISION_GUIDE = `
+## File Editing Tool Selection
+
+**Decision Tree:**
+1. Is this a NEW file that doesn't exist?
+   → Use \`write_file\` or \`create_file_or_folder\`
+
+2. Do you need to REPLACE THE ENTIRE file content?
+   → Use \`write_file\`
+
+3. Do you know the EXACT LINE NUMBERS to change?
+   → Use \`replace_file_content\` (preferred for precision)
+
+4. Do you know the EXACT TEXT to find and replace?
+   → Use \`edit_file\` with old_string/new_string
+
+**Quick Reference:**
+| Scenario | Tool | Why |
+|----------|------|-----|
+| Create new file | write_file | Creates with full content |
+| Rewrite entire file | write_file | Complete replacement |
+| Change specific lines | replace_file_content | Line-based precision |
+| Replace exact text | edit_file | String matching |
+| Add to end of file | edit_file | Match last lines, add new |
+`
+
+/**
+ * 搜索工具选择决策指南
+ */
+export const SEARCH_DECISION_GUIDE = `
+## Search Tool Selection
+
+**Decision Tree:**
+1. Looking for a CONCEPT or MEANING (e.g., "authentication logic")?
+   → Use \`codebase_search\` (semantic/AI search)
+
+2. Looking for EXACT TEXT or PATTERN?
+   → Use \`search_files\` (text/regex search)
+
+3. Searching within a SINGLE KNOWN FILE?
+   → Use \`search_in_file\`
+
+4. Looking for FILES BY NAME/PATTERN?
+   → Use \`list_directory\` or \`get_dir_tree\`
+
+**NEVER use bash grep/find - use these tools instead.**
+`
 
 // ============================================
 // 生成器函数
@@ -530,7 +764,7 @@ export function generateZodSchema(config: ToolConfig): z.ZodSchema {
         shape[key] = schema
     }
 
-    let objectSchema = z.object(shape)
+    const objectSchema = z.object(shape)
 
     // 添加自定义验证
     if (config.validate) {
@@ -541,6 +775,147 @@ export function generateZodSchema(config: ToolConfig): z.ZodSchema {
     }
 
     return objectSchema
+}
+
+// ============================================
+// 生成系统提示词中的工具描述
+// ============================================
+
+/**
+ * 生成单个工具的详细提示词描述
+ */
+export function generateToolPromptDescription(config: ToolConfig): string {
+    const lines: string[] = []
+    
+    // 工具名和简短描述
+    lines.push(`### ${config.displayName} (\`${config.name}\`)`)
+    lines.push(config.detailedDescription || config.description)
+    lines.push('')
+    
+    // 参数
+    const params = Object.entries(config.parameters)
+    if (params.length > 0) {
+        lines.push('**Parameters:**')
+        for (const [key, prop] of params) {
+            const required = prop.required ? '(required)' : '(optional)'
+            const defaultVal = prop.default !== undefined ? ` [default: ${prop.default}]` : ''
+            lines.push(`- \`${key}\` ${required}: ${prop.description}${defaultVal}`)
+        }
+        lines.push('')
+    }
+    
+    // 示例
+    if (config.examples && config.examples.length > 0) {
+        lines.push('**Examples:**')
+        for (const example of config.examples) {
+            lines.push(`- \`${example}\``)
+        }
+        lines.push('')
+    }
+    
+    // 关键规则
+    if (config.criticalRules && config.criticalRules.length > 0) {
+        lines.push('**CRITICAL:**')
+        for (const rule of config.criticalRules) {
+            lines.push(`- ${rule}`)
+        }
+        lines.push('')
+    }
+    
+    // 常见错误
+    if (config.commonErrors && config.commonErrors.length > 0) {
+        lines.push('**Common Errors:**')
+        for (const err of config.commonErrors) {
+            lines.push(`- "${err.error}" → ${err.solution}`)
+        }
+        lines.push('')
+    }
+    
+    return lines.join('\n')
+}
+
+/**
+ * 生成所有工具的提示词描述（按类别分组）
+ */
+export function generateAllToolsPromptDescription(): string {
+    const categories: Record<ToolCategory, ToolConfig[]> = {
+        read: [],
+        search: [],
+        write: [],
+        terminal: [],
+        lsp: [],
+        network: [],
+        plan: [],
+    }
+    
+    // 按类别分组
+    for (const config of Object.values(TOOL_CONFIGS)) {
+        if (config.enabled) {
+            categories[config.category].push(config)
+        }
+    }
+    
+    const sections: string[] = []
+    
+    // 文件读取
+    if (categories.read.length > 0) {
+        sections.push('## File Reading Tools')
+        for (const config of categories.read) {
+            sections.push(generateToolPromptDescription(config))
+        }
+    }
+    
+    // 搜索
+    if (categories.search.length > 0) {
+        sections.push('## Search Tools')
+        sections.push(SEARCH_DECISION_GUIDE)
+        for (const config of categories.search) {
+            sections.push(generateToolPromptDescription(config))
+        }
+    }
+    
+    // 文件编辑
+    if (categories.write.length > 0) {
+        sections.push('## File Editing Tools')
+        sections.push(FILE_EDIT_DECISION_GUIDE)
+        for (const config of categories.write) {
+            sections.push(generateToolPromptDescription(config))
+        }
+    }
+    
+    // 终端
+    if (categories.terminal.length > 0) {
+        sections.push('## Terminal Tools')
+        for (const config of categories.terminal) {
+            sections.push(generateToolPromptDescription(config))
+        }
+    }
+    
+    // LSP
+    if (categories.lsp.length > 0) {
+        sections.push('## Code Intelligence Tools')
+        for (const config of categories.lsp) {
+            sections.push(generateToolPromptDescription(config))
+        }
+    }
+    
+    // 网络
+    if (categories.network.length > 0) {
+        sections.push('## Network Tools')
+        for (const config of categories.network) {
+            sections.push(generateToolPromptDescription(config))
+        }
+    }
+    
+    // 计划
+    if (categories.plan.length > 0) {
+        sections.push('## Planning Tools')
+        for (const config of categories.plan) {
+            sections.push(generateToolPromptDescription(config))
+        }
+    }
+    
+    return sections.join('\n\n')
 }
 
 // ============================================
@@ -588,7 +963,9 @@ export function getWriteTools(): string[] {
     return Object.entries(TOOL_CONFIGS)
         .filter(([_, config]) => config.category === 'write')
         .map(([name]) => name)
-}/** 获取需要审批的工具 */
+}
+
+/** 获取需要审批的工具 */
 export function getApprovalRequiredTools(): string[] {
     return Object.entries(TOOL_CONFIGS)
         .filter(([_, config]) => config.approvalType !== 'none')

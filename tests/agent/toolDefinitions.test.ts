@@ -115,47 +115,29 @@ describe('Tool Schema Validation', () => {
   })
 
   describe('EditFileSchema', () => {
-    it('should validate valid SEARCH/REPLACE blocks', () => {
+    it('should validate valid old_string/new_string', () => {
       const result = EditFileSchema.safeParse({
         path: 'src/main.ts',
-        search_replace_blocks: '<<<<<<< SEARCH\nold code\n=======\nnew code\n>>>>>>> REPLACE',
+        old_string: 'const a = 1;',
+        new_string: 'const a = 2;',
       })
       expect(result.success).toBe(true)
     })
 
-    it('should reject invalid format', () => {
+    it('should reject missing old_string', () => {
       const result = EditFileSchema.safeParse({
         path: 'src/main.ts',
-        search_replace_blocks: 'just some text',
+        new_string: 'const a = 2;',
       })
       expect(result.success).toBe(false)
     })
 
-    it('should preprocess object format to string', () => {
+    it('should reject missing new_string', () => {
       const result = EditFileSchema.safeParse({
         path: 'src/main.ts',
-        search_replace_blocks: [
-          { SEARCH: 'old code', REPLACE: 'new code' },
-        ],
+        old_string: 'const a = 1;',
       })
-      expect(result.success).toBe(true)
-    })
-
-    it('should handle various key name variants', () => {
-      const variants = [
-        { search: 'old', replace: 'new' },
-        { old: 'old', new: 'new' },
-        { find: 'old', to: 'new' },
-        { original: 'old', replacement: 'new' },
-      ]
-
-      for (const variant of variants) {
-        const result = EditFileSchema.safeParse({
-          path: 'src/main.ts',
-          search_replace_blocks: [variant],
-        })
-        expect(result.success).toBe(true)
-      }
+      expect(result.success).toBe(false)
     })
   })
 

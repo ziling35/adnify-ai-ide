@@ -157,7 +157,7 @@ function extractKnownFields(jsonString: string): Record<string, unknown> {
   // 常用工具参数字段
   const commonFields = [
     'path', 'content', 'command', 'query', 'pattern',
-    'search_replace_blocks', 'start_line', 'end_line',
+    'old_string', 'new_string', 'start_line', 'end_line',
     'line', 'column', 'paths', 'url', 'question'
   ]
 

@@ -83,14 +83,14 @@ class StreamingEditService {
 	}
 
 	/**
-	 * 应用增量更新（用于 search/replace 块）
+	 * 应用增量更新（用于 old_string/new_string 替换）
 	 */
-	applyDelta(editId: string, searchText: string, replaceText: string): boolean {
+	applyDelta(editId: string, oldString: string, newString: string): boolean {
 		const state = this.activeEdits.get(editId)
 		if (!state) return false
 
-		if (state.currentContent.includes(searchText)) {
-			state.currentContent = state.currentContent.replace(searchText, replaceText)
+		if (state.currentContent.includes(oldString)) {
+			state.currentContent = state.currentContent.replace(oldString, newString)
 			this.notifyListeners(editId, state)
 			this.notifyGlobalListeners()
 			return true

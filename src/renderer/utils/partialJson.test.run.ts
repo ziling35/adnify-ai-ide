@@ -139,9 +139,14 @@ function extractKnownFields(jsonString: string): Record<string, unknown> {
         result.content = unescapeString(contentMatch[1])
     }
 
-    const searchReplaceMatch = jsonString.match(/"search_replace_blocks"\s*:\s*"((?:[^"\\]|\\.)*)/)
-    if (searchReplaceMatch) {
-        result.search_replace_blocks = unescapeString(searchReplaceMatch[1])
+    const oldStringMatch = jsonString.match(/"old_string"\s*:\s*"((?:[^"\\]|\\.)*)/)
+    if (oldStringMatch) {
+        result.old_string = unescapeString(oldStringMatch[1])
+    }
+
+    const newStringMatch = jsonString.match(/"new_string"\s*:\s*"((?:[^"\\]|\\.)*)/)
+    if (newStringMatch) {
+        result.new_string = unescapeString(newStringMatch[1])
     }
 
     const commandMatch = jsonString.match(/"command"\s*:\s*"((?:[^"\\]|\\.)*)/)
@@ -179,8 +184,8 @@ const testCases = [
     // Case 2: Incomplete content with escapes
     '{"path": "test.ts", "content": "console.log(\\"Hello',
 
-    // Case 3: Incomplete search_replace_blocks
-    '{"path": "test.ts", "search_replace_blocks": "<<<<<<< SEARCH\\nconst a = 1;\\n=======\\nconst a = 2;',
+    // Case 3: Incomplete old_string/new_string
+    '{"path": "test.ts", "old_string": "const a = 1;", "new_string": "const a = 2',
 
     // Case 4: Deeply nested or complex
     '{"path": "test.ts", "content": "function test() {\\n  return \\"string\\";\\n',

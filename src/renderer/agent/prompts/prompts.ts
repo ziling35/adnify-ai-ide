@@ -8,15 +8,6 @@ import { rulesService } from '../services/rulesService'
 import { useAgentStore } from '../store/AgentStore'
 import { FILE_LIMITS } from '@shared/constants'
 
-// Search/Replace 块格式 - 从统一模块导入
-export {
-	SEARCH_MARKER as ORIGINAL,
-	DIVIDER_MARKER as DIVIDER,
-	REPLACE_MARKER as FINAL,
-	parseSearchReplaceBlocks,
-	applySearchReplaceBlocks,
-} from '@utils/searchReplace'
-
 // 限制常量（从共享配置导入）
 export const MAX_FILE_CHARS = FILE_LIMITS.MAX_FILE_CHARS
 export const MAX_DIR_ITEMS = FILE_LIMITS.MAX_DIR_ITEMS
