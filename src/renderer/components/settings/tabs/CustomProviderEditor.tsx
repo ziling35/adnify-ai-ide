@@ -12,7 +12,7 @@ import { useState } from 'react'
 import { ChevronDown, ChevronUp, Plus, Trash, Zap, X, Save, Code2 } from 'lucide-react'
 import { Button, Input, Select } from '@components/ui'
 import { useStore } from '@store'
-import type { AdvancedConfig, ProviderMode, AuthType, LLMAdapterConfig } from '@shared/config/providers'
+import type { AdvancedConfig, ApiProtocol, LLMAdapterConfig } from '@shared/config/providers'
 import { BUILTIN_ADAPTERS } from '@shared/config/providers'
 import { VENDOR_PRESETS } from '@shared/types/customProviderPresets'
 import { toast } from '@components/common/ToastProvider'
@@ -57,7 +57,7 @@ export function CustomProviderEditor({
   const [apiKey, setApiKey] = useState(config?.apiKey || '')
   const [models, setModels] = useState<string[]>(config?.customModels || [])
   const [newModel, setNewModel] = useState('')
-  const [mode, setMode] = useState<ProviderMode>(config?.mode || 'openai')
+  const [mode, setMode] = useState<ApiProtocol>(config?.protocol || 'openai')
   const [timeout, setTimeout] = useState(config?.timeout ? config.timeout / 1000 : 120)
   const [selectedPreset, setSelectedPreset] = useState('')
 
@@ -73,23 +73,28 @@ export function CustomProviderEditor({
     setName(preset.name || presetId)
     setBaseUrl(preset.baseUrl || '')
     setModels(preset.models || [])
-    setMode(preset.mode || 'openai')
+    setMode(preset.protocol || 'openai')
     if (preset.defaults?.timeout) {
       setTimeout(preset.defaults.timeout / 1000)
     }
     setSelectedPreset(presetId)
 
-    if (preset.customConfig) {
-      const cfg = preset.customConfig
+    // 完全自定义模式自动展开配置面板
+    if (preset.protocol === 'custom') {
+      setShowCustomConfig(true)
+    }
+
+    if (preset.adapter) {
+      // 从 adapter 配置中提取高级配置
+      const adapter = preset.adapter as LLMAdapterConfig
       setAdvancedConfig({
-        request: { endpoint: cfg.request.endpoint, bodyTemplate: cfg.request.bodyTemplate },
-        response: {
-          contentField: cfg.response.streaming.contentField,
-          reasoningField: cfg.response.streaming.reasoningField,
-          toolCallField: cfg.response.streaming.toolCallsField,
-          doneMarker: cfg.response.sseConfig.doneMarker,
-        },
-        auth: { type: cfg.auth.type as AuthType, headerName: cfg.auth.headerName },
+        request: { endpoint: adapter.request?.endpoint, bodyTemplate: adapter.request?.bodyTemplate },
+        response: adapter.response ? {
+          contentField: adapter.response.contentField,
+          reasoningField: adapter.response.reasoningField,
+          toolCallField: adapter.response.toolCallField,
+          doneMarker: adapter.response.doneMarker,
+        } : undefined,
       })
     }
   }
@@ -112,6 +117,7 @@ export function CustomProviderEditor({
       id: providerId || generateCustomProviderId(),
       name: name,
       description: '自定义适配器',
+      protocol: mode,
     }
 
     // 应用高级配置
@@ -119,8 +125,9 @@ export function CustomProviderEditor({
       if (advancedConfig.request) {
         adapter.request = {
           ...adapter.request,
-          ...advancedConfig.request,
+          endpoint: advancedConfig.request.endpoint || adapter.request.endpoint,
           headers: { ...adapter.request.headers, ...advancedConfig.request.headers },
+          bodyTemplate: advancedConfig.request.bodyTemplate || adapter.request.bodyTemplate,
         }
       }
       if (advancedConfig.response) {
@@ -128,6 +135,18 @@ export function CustomProviderEditor({
           ...adapter.response,
           ...advancedConfig.response,
         }
+      }
+      if (advancedConfig.messageFormat) {
+        adapter.messageFormat = {
+          ...adapter.messageFormat,
+          ...advancedConfig.messageFormat,
+        } as any
+      }
+      if (advancedConfig.toolFormat) {
+        adapter.toolFormat = {
+          ...adapter.toolFormat,
+          ...advancedConfig.toolFormat,
+        } as any
       }
     }
 
@@ -157,7 +176,7 @@ export function CustomProviderEditor({
       baseUrl: baseUrl.trim(),
       apiKey: apiKey || undefined,
       customModels: models,
-      mode,
+      protocol: mode,
       timeout: timeout * 1000,
       adapterConfig: buildAdapterConfig(),
       advanced: advancedConfig,
@@ -209,7 +228,7 @@ export function CustomProviderEditor({
           </label>
           <Select 
             value={mode} 
-            onChange={(v) => setMode(v as ProviderMode)} 
+            onChange={(v) => setMode(v as ApiProtocol)} 
             options={MODE_OPTIONS} 
             className="text-sm" 
           />
@@ -292,7 +311,7 @@ export function CustomProviderEditor({
             {showCustomConfig ? <ChevronDown className="w-4 h-4" /> : <ChevronUp className="w-4 h-4" />}
             <Code2 className="w-4 h-4 text-accent" />
             <span className="text-sm font-medium text-text-primary">
-              {language === 'zh' ? '自定义请求/响应配置' : 'Custom Request/Response Config'}
+              {language === 'zh' ? '完整适配器配置' : 'Full Adapter Configuration'}
             </span>
             <span className="ml-auto text-xs text-accent">
               {language === 'zh' ? '必填' : 'Required'}
@@ -304,7 +323,8 @@ export function CustomProviderEditor({
                 overrides={advancedConfig} 
                 onChange={setAdvancedConfig} 
                 language={language} 
-                defaultEndpoint="/chat/completions" 
+                defaultEndpoint="/chat/completions"
+                fullCustomMode={true}
               />
             </div>
           )}

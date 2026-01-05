@@ -3,20 +3,14 @@
  * 统一管理 LLM Provider，处理消息发送和事件分发
  * 
  * 路由规则：
- * 1. 内置 Provider (openai/anthropic/gemini) → 使用对应的原生 Provider
- * 2. 自定义 Provider → 使用 CustomProvider
+ * 1. 所有请求统一使用 UnifiedProvider
+ * 2. UnifiedProvider 根据 protocol 自动选择处理方式
  */
 
 import { logger } from '@shared/utils/Logger'
 import { BrowserWindow } from 'electron'
-import { OpenAIProvider } from './providers/openai'
-import { AnthropicProvider } from './providers/anthropic'
-import { GeminiProvider } from './providers/gemini'
-import { CustomProvider } from './providers/custom'
+import { UnifiedProvider } from './providers/unified'
 import { LLMProvider, LLMMessage, LLMConfig, ToolDefinition, LLMErrorCode } from './types'
-
-// 内置 Provider ID
-const BUILTIN_PROVIDER_IDS = ['openai', 'anthropic', 'gemini']
 
 interface ProviderCacheEntry {
   provider: LLMProvider
@@ -73,27 +67,26 @@ export class LLMService {
 
   private generateConfigHash(config: LLMConfig): string {
     const relevantConfig = {
+      provider: config.provider,
       apiKey: config.apiKey,
       baseUrl: config.baseUrl,
       timeout: config.timeout,
+      protocol: config.adapterConfig?.protocol,
+      // 包含 advanced 配置的关键部分
+      advancedAuth: config.advanced?.auth,
+      advancedRequest: config.advanced?.request,
     }
     return JSON.stringify(relevantConfig)
   }
 
   private getProviderKey(config: LLMConfig): string {
-    const providerId = config.provider
-    const isBuiltin = BUILTIN_PROVIDER_IDS.includes(providerId)
-    return `${isBuiltin ? '' : 'custom:'}${providerId}:${config.baseUrl || 'default'}`
+    const protocol = config.adapterConfig?.protocol || 'openai'
+    return `${config.provider}:${protocol}:${config.baseUrl || 'default'}`
   }
 
   /**
    * 获取或创建 Provider 实例
-   * 
-   * 路由规则：
-   * 1. provider = 'anthropic' → AnthropicProvider
-   * 2. provider = 'gemini' → GeminiProvider
-   * 3. provider = 'openai' → OpenAIProvider
-   * 4. 其他 → CustomProvider
+   * 统一使用 UnifiedProvider，根据 protocol 自动路由
    */
   private getProvider(config: LLMConfig): LLMProvider {
     const key = this.getProviderKey(config)
@@ -110,33 +103,8 @@ export class LLMService {
       this.providerCache.delete(key)
     }
 
-    let provider: LLMProvider
-    const providerId = config.provider
-
-    // 路由到对应的 Provider 实现（统一传递完整 config）
-    switch (providerId) {
-      case 'anthropic':
-        provider = new AnthropicProvider(config)
-        break
-      case 'gemini':
-        provider = new GeminiProvider(config)
-        break
-      case 'openai':
-        provider = new OpenAIProvider(config)
-        break
-      default:
-        // 自定义 Provider
-        if (!config.adapterConfig) {
-          logger.system.warn('[LLMService] Custom provider without adapterConfig, using OpenAI adapter')
-        }
-        provider = new CustomProvider(
-          config.adapterConfig!,
-          config.apiKey,
-          config.baseUrl || '',
-          config.timeout
-        )
-        break
-    }
+    // 统一使用 UnifiedProvider
+    const provider = new UnifiedProvider(config)
 
     this.providerCache.set(key, {
       provider,
@@ -151,7 +119,7 @@ export class LLMService {
   invalidateProvider(providerId: string): void {
     const keysToDelete: string[] = []
     for (const key of this.providerCache.keys()) {
-      if (key.includes(providerId)) {
+      if (key.startsWith(providerId + ':')) {
         keysToDelete.push(key)
       }
     }
@@ -175,8 +143,10 @@ export class LLMService {
     logger.system.info('[LLMService] sendMessage', {
       provider: config.provider,
       model: config.model,
+      protocol: config.adapterConfig?.protocol || 'auto',
       messageCount: messages.length,
       hasTools: !!tools?.length,
+      toolCount: tools?.length || 0,
     })
 
     this.currentAbortController = new AbortController()
@@ -296,8 +266,8 @@ export class LLMService {
     try {
       const provider = this.getProvider(config)
       
-      // 从 adapterConfig 的 bodyTemplate 中读取 stream 配置，默认 true
-      const stream = config.adapterConfig?.request?.bodyTemplate?.stream !== false
+      // 同步请求使用流式（累积内容），但不发送到前端
+      const stream = true
 
       await provider.chat({
         model: config.model,

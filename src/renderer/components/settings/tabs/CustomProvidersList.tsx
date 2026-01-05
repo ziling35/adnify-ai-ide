@@ -106,7 +106,7 @@ export function CustomProvidersList({ language }: CustomProvidersListProps) {
                           {displayName}
                         </span>
                         <span className="px-1.5 py-0.5 text-[10px] rounded bg-surface-elevated border border-border-subtle text-text-muted">
-                          {MODE_LABELS[config.mode || 'openai']}
+                          {MODE_LABELS[config.protocol || 'openai']}
                         </span>
                         {hasApiKey && (
                           <span 

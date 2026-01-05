@@ -9,22 +9,19 @@ import type {
   CustomProviderConfig,
   LLMAdapterConfig,
 } from '@/shared/config/providers'
-import { OPENAI_ADAPTER, ANTHROPIC_ADAPTER } from '@/shared/config/providers'
+import {
+  OPENAI_ADAPTER,
+  ANTHROPIC_ADAPTER,
+  DEEPSEEK_ADAPTER,
+  ZHIPU_ADAPTER,
+  QWEN_ADAPTER,
+  ERNIE_ADAPTER,
+  DOUBAO_ADAPTER,
+} from '@/shared/config/providers'
 
 // ============================================
 // 适配器预设（基于内置适配器扩展）
 // ============================================
-
-/** DeepSeek 适配器配置（支持 reasoning） */
-export const DEEPSEEK_ADAPTER_PRESET: Partial<LLMAdapterConfig> = {
-  ...OPENAI_ADAPTER,
-  id: 'deepseek',
-  name: 'DeepSeek',
-  response: {
-    ...OPENAI_ADAPTER.response,
-    reasoningField: 'delta.reasoning_content',
-  },
-}
 
 /** Anthropic Extended Thinking 适配器配置 */
 export const ANTHROPIC_THINKING_ADAPTER_PRESET: Partial<LLMAdapterConfig> = {
@@ -51,7 +48,7 @@ export const PRESET_TEMPLATES: PresetTemplate[] = [
   {
     id: 'openai-compatible',
     name: 'OpenAI 兼容',
-    description: '适用于 DeepSeek, Groq, Qwen, Ollama, Together AI 等 OpenAI 兼容 API',
+    description: '适用于 Groq, Together AI 等 OpenAI 兼容 API',
     config: {
       features: {
         streaming: true,
@@ -69,9 +66,9 @@ export const PRESET_TEMPLATES: PresetTemplate[] = [
     adapterPreset: OPENAI_ADAPTER,
   },
   {
-    id: 'deepseek-compatible',
-    name: 'DeepSeek 兼容',
-    description: '适用于 DeepSeek 等支持推理的 API',
+    id: 'deepseek-native',
+    name: 'DeepSeek 原生',
+    description: '适用于 DeepSeek API（支持推理）',
     config: {
       features: {
         streaming: true,
@@ -86,7 +83,7 @@ export const PRESET_TEMPLATES: PresetTemplate[] = [
         timeout: 120000,
       },
     },
-    adapterPreset: DEEPSEEK_ADAPTER_PRESET,
+    adapterPreset: DEEPSEEK_ADAPTER,
   },
   {
     id: 'anthropic-compatible',
@@ -149,7 +146,7 @@ export const PRESET_TEMPLATES: PresetTemplate[] = [
 ]
 
 // ============================================
-// 常用厂商快速配置
+// 常用厂商快速配置（使用原生 API）
 // ============================================
 
 export const VENDOR_PRESETS: Record<string, Partial<CustomProviderConfig>> = {
@@ -160,6 +157,8 @@ export const VENDOR_PRESETS: Record<string, Partial<CustomProviderConfig>> = {
     baseUrl: 'https://api.deepseek.com',
     models: ['deepseek-chat', 'deepseek-reasoner'],
     defaultModel: 'deepseek-chat',
+    protocol: 'custom',
+    adapter: DEEPSEEK_ADAPTER,
     features: {
       streaming: true,
       tools: true,
@@ -174,6 +173,8 @@ export const VENDOR_PRESETS: Record<string, Partial<CustomProviderConfig>> = {
     baseUrl: 'https://api.groq.com/openai/v1',
     models: ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
     defaultModel: 'llama-3.3-70b-versatile',
+    protocol: 'openai',
+    adapter: OPENAI_ADAPTER,
     features: {
       streaming: true,
       tools: true,
@@ -185,8 +186,10 @@ export const VENDOR_PRESETS: Record<string, Partial<CustomProviderConfig>> = {
     displayName: '智谱 GLM',
     description: 'GLM-4, GLM-4.5 系列',
     baseUrl: 'https://open.bigmodel.cn/api/paas/v4',
-    models: ['glm-4-plus', 'glm-4-air', 'glm-4-flash'],
+    models: ['glm-4-plus', 'glm-4-air', 'glm-4-flash', 'glm-4-0520'],
     defaultModel: 'glm-4-plus',
+    protocol: 'custom',
+    adapter: ZHIPU_ADAPTER,
     features: {
       streaming: true,
       tools: true,
@@ -196,15 +199,49 @@ export const VENDOR_PRESETS: Record<string, Partial<CustomProviderConfig>> = {
   },
   qwen: {
     name: 'qwen',
-    displayName: '阿里 Qwen',
-    description: 'Qwen 系列 (通义千问)',
-    baseUrl: 'https://dashscope.aliyuncs.com/compatible-mode/v1',
-    models: ['qwen-plus', 'qwen-turbo', 'qwen-max'],
+    displayName: '阿里通义千问',
+    description: 'Qwen 系列 (DashScope 原生 API)',
+    baseUrl: 'https://dashscope.aliyuncs.com/api/v1',
+    models: ['qwen-plus', 'qwen-turbo', 'qwen-max', 'qwen-long'],
     defaultModel: 'qwen-plus',
+    protocol: 'custom',
+    adapter: QWEN_ADAPTER,
     features: {
       streaming: true,
       tools: true,
       vision: true,
+      reasoning: true,
+    },
+  },
+  ernie: {
+    name: 'ernie',
+    displayName: '百度文心一言',
+    description: 'ERNIE 系列模型',
+    baseUrl: 'https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop',
+    models: ['ernie-4.0-8k', 'ernie-3.5-8k', 'ernie-speed-8k'],
+    defaultModel: 'ernie-4.0-8k',
+    protocol: 'custom',
+    adapter: ERNIE_ADAPTER,
+    features: {
+      streaming: true,
+      tools: true,
+      vision: false,
+    },
+  },
+  doubao: {
+    name: 'doubao',
+    displayName: '字节豆包',
+    description: '火山引擎豆包大模型',
+    baseUrl: 'https://ark.cn-beijing.volces.com/api/v3',
+    models: ['doubao-pro-32k', 'doubao-lite-32k'],
+    defaultModel: 'doubao-pro-32k',
+    protocol: 'custom',
+    adapter: DOUBAO_ADAPTER,
+    features: {
+      streaming: true,
+      tools: true,
+      vision: true,
+      reasoning: true,
     },
   },
   ollama: {
@@ -214,6 +251,8 @@ export const VENDOR_PRESETS: Record<string, Partial<CustomProviderConfig>> = {
     baseUrl: 'http://localhost:11434/v1',
     models: ['llama3.2', 'codellama', 'qwen2.5-coder'],
     defaultModel: 'llama3.2',
+    protocol: 'openai',
+    adapter: OPENAI_ADAPTER,
     features: {
       streaming: true,
       tools: true,
@@ -233,6 +272,22 @@ export const VENDOR_PRESETS: Record<string, Partial<CustomProviderConfig>> = {
     baseUrl: 'https://api.siliconflow.cn/v1',
     models: ['deepseek-ai/DeepSeek-V3', 'Qwen/Qwen2.5-72B-Instruct'],
     defaultModel: 'deepseek-ai/DeepSeek-V3',
+    protocol: 'openai',
+    adapter: OPENAI_ADAPTER,
+    features: {
+      streaming: true,
+      tools: true,
+    },
+  },
+  custom: {
+    name: 'custom',
+    displayName: '完全自定义',
+    description: '从零开始配置任意 API',
+    baseUrl: '',
+    models: [],
+    defaultModel: '',
+    protocol: 'custom',
+    adapter: OPENAI_ADAPTER,
     features: {
       streaming: true,
       tools: true,
@@ -286,14 +341,15 @@ export function createFromVendorPreset(vendorId: string): CustomProviderConfig {
 
   const now = Date.now()
   return {
-    id: `${vendorId}-${now}`,
+    id: `custom-${vendorId}-${now}`,
     name: preset.name || vendorId,
     displayName: preset.displayName || vendorId,
     description: preset.description || '',
     baseUrl: preset.baseUrl || '',
     models: preset.models || [],
     defaultModel: preset.defaultModel || preset.models?.[0] || '',
-    adapter: OPENAI_ADAPTER,
+    protocol: preset.protocol || 'custom',
+    adapter: preset.adapter || OPENAI_ADAPTER,
     features: preset.features || { streaming: true, tools: true, vision: false },
     defaults: preset.defaults || { temperature: 0.7, topP: 1, maxTokens: 8192, timeout: 120000 },
     auth: { type: 'bearer' },

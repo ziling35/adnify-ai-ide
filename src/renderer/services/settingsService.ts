@@ -11,6 +11,7 @@ import {
   isBuiltinProvider,
   getBuiltinProvider,
   getAdapterConfig,
+  cleanAdvancedConfig,
   type LLMAdapterConfig,
   type AdvancedConfig,
   type UserProviderConfig,
@@ -201,8 +202,12 @@ function cleanProviderConfig(
     cleaned.customModels = config.customModels
   }
 
+  // 使用 cleanAdvancedConfig 清理高级配置
   if (config.advanced) {
-    cleaned.advanced = config.advanced
+    const cleanedAdvanced = cleanAdvancedConfig(providerId, config.advanced)
+    if (cleanedAdvanced) {
+      cleaned.advanced = cleanedAdvanced
+    }
   }
 
   // 自定义 Provider: 保存完整配置
@@ -212,7 +217,7 @@ function cleanProviderConfig(
     }
     // 保存自定义厂商的元数据
     if (config.displayName) cleaned.displayName = config.displayName
-    if (config.mode) cleaned.mode = config.mode
+    if (config.protocol) cleaned.protocol = config.protocol
     if (config.createdAt) cleaned.createdAt = config.createdAt
     if (config.updatedAt) cleaned.updatedAt = config.updatedAt
     // 自定义厂商必须保存 baseUrl

@@ -716,7 +716,7 @@ export function generateToolDefinition(config: ToolConfig): ToolDefinition {
         parameters: {
             type: 'object',
             properties,
-            required: required.length > 0 ? required : undefined,
+            required,  // Anthropic 要求 required 必须是数组，即使为空
         },
     }
 }

@@ -5,3 +5,4 @@
 export { LLMService } from './llmService'
 export * from './types'
 export * from './providers'
+export * from './adapters'

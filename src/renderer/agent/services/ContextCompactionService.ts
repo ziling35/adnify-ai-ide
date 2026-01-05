@@ -166,20 +166,30 @@ class ContextCompactionServiceClass {
     try {
       // 从主 store 获取 LLM 配置
       const { useStore } = await import('@store')
-      const llmConfig = useStore.getState().llmConfig
+      const state = useStore.getState()
+      const llmConfig = state.llmConfig
+      const providerConfigs = state.providerConfigs
       
       if (!llmConfig?.apiKey) {
-        logger.agent.warn('[ContextCompaction] No API key configured')
-        return null
+        // 尝试从 providerConfigs 获取 apiKey
+        const providerConfig = providerConfigs[llmConfig.provider]
+        if (!providerConfig?.apiKey) {
+          logger.agent.warn('[ContextCompaction] No API key configured')
+          return null
+        }
+      }
+
+      // 构建完整的配置，确保包含 adapterConfig
+      const fullConfig = {
+        ...llmConfig,
+        apiKey: llmConfig.apiKey || providerConfigs[llmConfig.provider]?.apiKey || '',
+        maxTokens: 1000, // 摘要不需要太长
+        temperature: 0.3, // 低温度保证一致性
       }
 
       // 使用独立的压缩 API（不与主对话冲突）
       const result = await api.llm.compactContext({
-        config: {
-          ...llmConfig,
-          maxTokens: 1000, // 摘要不需要太长
-          temperature: 0.3, // 低温度保证一致性
-        },
+        config: fullConfig,
         messages: [
           { role: 'user', content: prompt }
         ],
